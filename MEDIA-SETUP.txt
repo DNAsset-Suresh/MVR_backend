@@ -1,0 +1,62 @@
+MVR Media update — 14 October 2026
+
+Implemented locally in the existing Express/PostgreSQL website. No deployment, framework migration, database write, new secret, or change to booking/authentication was required.
+
+YouTube
+The saved integration is a published CMS Media record linking to https://www.youtube.com/@MaduraiRamakrishnan with its existing uploaded image. No separate YouTube Data API adapter or YouTube environment configuration was found. That record is retained and used for both channel buttons.
+
+The gallery reads /api/content/media and /api/content/programmes through the existing backend. Actual published YouTube video links become thumbnail cards, deduplicated by video ID. Currently the existing student programme supplies a video. API errors have a retry control; missing thumbnails leave the original watch link usable. Playback opens YouTube in a new tab, avoiding embed restrictions. No API keys are needed for these links or thumbnails.
+
+Instagram status: PARTIALLY CONFIGURED
+The owner supplied https://www.instagram.com/madurai.ramakrishnan/reels/?hl=en. The Media page now links to its canonical profile https://www.instagram.com/madurai.ramakrishnan/.
+No individual post/Reel URLs, authorised feed connection, Meta app or token were supplied or found. A live Instagram feed has not been connected or verified. The page displays an honest empty state and the official profile button.
+
+Recommended next step — curated public posts, no credentials:
+1. Open the official account and copy the public URL of each approved post or Reel.
+2. In the existing Admin → Media editor, create an entry using that URL, its approved title/caption, and an approved thumbnail if available. Publish the entry.
+3. The Media page recognises instagram.com/p/... and instagram.com/reel/... URLs and displays a card with an original-post link. Add a profile URL as a Media entry to manage the follow button through the CMS; the supplied account is the fallback.
+4. Verify each post opens for the intended audience. This is a curated link gallery, not an automatic feed. No password, token, or Meta permissions are required.
+
+If automatic feed retrieval is desired:
+Use Meta's Instagram API with Instagram Login for a supported Business or Creator account. This route does not require a linked Facebook Page. Create/configure the Meta app, add an HTTPS OAuth redirect for the actual deployment domain, and authorise the account with the basic read permission (instagram_business_basic). Confirm the current access level and app-review requirements in the app dashboard for the accounts the app will serve; request no publishing/messaging permissions for a read-only feed.
+
+A backend adapter must then be added to the existing Express app. Store the app secret and access token only in backend environment variables, use a supported version of graph.instagram.com, fetch only the needed media fields, cache results, refresh tokens securely, and return only captions, public URLs and thumbnails. Handle expired authorisation, rate limits, empty feeds and provider failures. These OAuth/feed components are not implemented or represented as connected in this update. Do not paste passwords or private tokens into chat or a frontend file.
+
+Meta reference sources (checked 14 October 2026):
+https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/
+https://www.postman.com/meta/instagram/documentation/6yqw8pt/instagram-api
+Meta's documentation endpoint was rate limited in this environment; its official Postman documentation confirms professional-account support and the Instagram Login route without a Facebook Page.
+
+Changed website files:
+frontend/media.html
+frontend/programmes.html
+frontend/css/media-pages.css
+frontend/js/media.js
+frontend/js/media-utils.js
+frontend/js/programmes.js
+scripts/update-media-pages.js (narrow, repeatable generator for these two pages)
+scripts/generate-pages.js (delegates only these two pages to the narrow generator)
+tests/media.test.js
+
+Review documents:
+HOMEPAGE-TAMIL-REVIEW.txt — complete eight-section homepage copy, proposed categories/mission, missing essentials.
+ABOUT-TAMIL-REVIEW.txt — complete ten-section About copy, design concept, assets and confirmation checklist.
+Neither Home nor About was implemented; the supplied briefs explicitly require content approval first.
+
+Maintenance:
+Run node scripts/update-media-pages.js to regenerate only Media and Programmes. It overwrites only those two HTML files and is safe to repeat. The original programmes continue to come from the CMS and are never overwritten by this generator. Supplemental programme cards are hidden when the same video is later published in the CMS. Use the existing CMS for published content, and edit the narrow generator for these pages' static copy.
+
+Verification results:
+• npm run build passed: JavaScript syntax and 36 HTML documents checked.
+• node --test tests/media.test.js passed all 3 tests: valid/unsafe URL handling, profile/post classification, and cross-format video deduplication.
+• Desktop (1440px) and mobile (390px) browser checks completed for both pages. Media also checked at 768px. Measured document width matched scroll width, with no horizontal overflow.
+• The original saved programme and all three new cards were visible; real thumbnails loaded. Existing header/footer and mobile Menu worked. No JavaScript errors were observed in normal operation.
+• Media section anchor navigation worked. A deliberately blocked media API request displayed the Tamil error and retry control while retaining the independently loaded programme video. Restoring requests and clicking Retry recovered the channel and cleared the error.
+• All three supplied YouTube URLs resolved to video pages. Short Tamil summaries use their visible titles; full playback was not independently reviewed. Titles: WvY89k6jhHI — அழுகிய ஆப்பிளில் கூட ஒரு மரம் இருக்கிறது... நம்பிக்கையை தளரவிடாதீர்கள்!; u1xtTwJ9ujk — சமூக ஊடகங்கள் நம்மை அடிமை ஆக்குகிறதா? அறிவை வளர்க்கிறதா? | சிறப்பு பட்டிமன்றம்; T1-ADWx-xmc — இனிமையான வார்த்தைகள் தான் வாழ்க்கையயை மாற்றும் | Indha Naal Iniya Naal | Adithya TV.
+• The saved channel resolved to “Madurai Ramakrishnan - YouTube”. The Instagram URL resolved to “V Rama Krishnan (@madurai.ramakrishnan)”; Instagram displayed a login prompt, so logged-out post viewing and feed retrieval remain unverified.
+• SHA-256 comparisons found only frontend/media.html and frontend/programmes.html changed among pre-existing frontend files. New page-specific CSS/JS were added. Shared styles, navigation code, Home, About, booking, contact, login and admin files are unchanged. No database records were edited.
+• Running the narrow generator twice produced identical HTML. The general generator now delegates these two pages, so future regeneration retains the update.
+• No secrets were added to frontend source. Public Instagram links require no Meta permissions. Dynamic feed setup remains optional and incomplete.
+• Screenshots: test-results/media-tamil-desktop.jpg, media-tamil-mobile.jpg, programmes-tamil-desktop.jpg and programmes-tamil-mobile.jpg.
+
+Local preview: run npm start from the project directory, then open http://localhost:3000/media.html or http://localhost:3000/programmes.html. The temporary verification server did not run notification delivery and is stopped after verification. No hosted deployment was performed.

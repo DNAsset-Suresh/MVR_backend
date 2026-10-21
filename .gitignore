@@ -1,0 +1,10 @@
+node_modules/
+frontend/
+.env
+.env.*
+!.env.example
+.local/
+test-results/
+*.log
+mvr-deployment.zip
+

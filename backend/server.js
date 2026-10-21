@@ -1,0 +1,13 @@
+import {createApp} from './app.js';
+import {pool} from './database/connection.js';
+import {processOutbox} from './services/integrations.js';
+if(!process.env.DATABASE_URL||!process.env.APP_ORIGIN) throw new Error('Set DATABASE_URL and APP_ORIGIN in .env.');
+const origin=new URL(process.env.APP_ORIGIN);
+if(origin.origin!==process.env.APP_ORIGIN) throw new Error('APP_ORIGIN must be an origin without a trailing slash.');
+if(process.env.NODE_ENV==='production'&&origin.protocol!=='https:') throw new Error('Production requires an HTTPS APP_ORIGIN.');
+await pool.query('SELECT 1 FROM schema_migrations');
+const server=createApp().listen(Number(process.env.PORT||3000),process.env.HOST||'127.0.0.1',()=>console.log(`MVR is available at ${process.env.APP_ORIGIN}`));
+let busy=false;
+const worker=setInterval(async()=>{if(busy)return;busy=true;try{await processOutbox();}catch(error){console.error('Notification worker failed:',error.code||error.name);}finally{busy=false;}},15000);
+const cleanup=setInterval(()=>pool.query("DELETE FROM sessions WHERE expires_at<now(); DELETE FROM password_reset_tokens WHERE expires_at<now(); DELETE FROM chat_sessions WHERE created_at<now()-interval '30 days'; DELETE FROM outbox WHERE status='sent' AND created_at<now()-interval '30 days'").catch(()=>{}),3600000);
+for(const signal of ['SIGINT','SIGTERM']) process.on(signal,()=>{clearInterval(worker);clearInterval(cleanup);server.close(async()=>{await pool.end();process.exit(0);});});

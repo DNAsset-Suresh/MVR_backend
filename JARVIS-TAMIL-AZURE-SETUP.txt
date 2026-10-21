@@ -1,0 +1,186 @@
+MVR JARVIS — Tamil speech engine
+15 October 2026
+
+CURRENT STATUS
+
+The active assistant now uses Tamil only. The existing website, animated JARVIS
+panel, booking forms, database and administrator controls are preserved.
+This guide replaces the earlier English and browser-only Tamil instructions.
+
+VERIFIED ROOT CAUSE
+
+1. The previous requested implementation explicitly selected English voices,
+   en-IN recognition and English-only answer validation. It could not speak Tamil.
+2. The actual browser exposes Microsoft David, Mark and Zira, all en-US. It has
+   no Tamil speechSynthesis voice. Windows' installed voice registry agrees.
+3. Microphone permission is granted. An independent ta-IN browser recognition
+   test started and opened audio, then returned a network error. The browser's
+   on-device ta-IN recognition availability is unavailable. An English recognition
+   pack does not install Tamil recognition or a Tamil text-to-speech voice.
+4. No speech playback was running or paused during that diagnostic. The current
+   missing Tamil audio is not caused by cancellation of a playing Tamil utterance.
+5. Azure Speech credentials were absent during the initial inspection. Provider
+   credentials must be saved in the actual project .env before a live Azure test.
+
+SELECTED ENGINE
+
+Microsoft Azure AI Speech, using the official server-side JavaScript SDK:
+microsoft-cognitiveservices-speech-sdk 1.52.0 (installed and locked).
+Recognition language: ta-IN.
+Default synthesis voice: ta-IN-ValluvarNeural (male).
+Allowed alternative: ta-IN-PallaviNeural (female).
+Microsoft's current language table documents all three capabilities.
+
+A usable installed Tamil browser voice is preferred for playback. Otherwise the
+backend generates Azure Tamil MP3 audio. English voices are never selected to
+read Tamil. When Azure is configured, recognition uses Azure instead of the
+failing browser recognition service. Without Azure, browser ta-IN recognition
+can still be used where supported; this particular browser failed that test.
+
+AZURE CONFIGURATION
+
+Open the Speech resource in Azure Portal, then its Keys and Endpoint page. Use
+the resource's key and matching location/region, not a subscription ID. Configure
+the existing project .env privately; do not paste keys into chat or frontend code:
+
+AZURE_SPEECH_KEY=your_resource_key
+AZURE_SPEECH_REGION=your_resource_region
+AZURE_SPEECH_VOICE=ta-IN-ValluvarNeural
+
+For example, centralindia is a region identifier; use it only if your resource is
+actually in that region. The SDK derives Microsoft's regional service endpoints
+from this server-only region setting. No arbitrary endpoint supplied by a browser
+is accepted. No key, bearer token or service endpoint is returned in public config.
+The existing database settings must remain intact. The old JARVIS_CLOUD_SPEECH and
+OPENAI_TTS_* variables no longer control active speech. Azure usage can incur
+charges under the resource's plan. No new provider account is created by the app.
+
+OPENAI_API_KEY and OPENAI_MODEL remain optional for grounded Tamil answer
+generation. Azure recognition and synthesis do not require an OpenAI key.
+Without an answer-model key, approved Tamil website answers and live published
+availability still work. Missing information is acknowledged rather than invented.
+
+Restart the backend after saving .env. For the existing preview:
+node --env-file-if-exists=.env scripts/preview-server.js
+This preview does not seed/migrate the database or run outbound notifications.
+Refresh the website afterward so its provider disclosure matches the new config.
+
+WINDOWS TAMIL VOICE CHECK
+
+Windows currently lists en-US and en-IN as preferred languages; no Tamil voice
+appears in its installed voice registry. The full optional-feature query requires
+Windows administrator elevation and could not run in this session. No Windows
+language feature or display language was changed.
+
+Open Settings > Time & language > Language & region. If necessary, add Tamil
+without choosing it as the Windows display language. Open Tamil > Language
+options. Install Speech/Text-to-speech only if Windows offers that feature.
+Microsoft's Windows voice list includes Tamil Valluvar, but availability on a
+particular PC and exposure to a browser must be checked independently.
+Restart the browser if prompted, then inspect speechSynthesis.getVoices() in its
+developer console. Confirm a voice whose lang is ta-IN (or another ta locale).
+Installing a general language pack alone is not proof that browser TTS works.
+Azure works independently of this optional Windows installation.
+
+VOICE FLOW AND SECURITY
+
+Start voice mode -> microphone permission -> Tamil voice preparation -> exact
+requested Tamil introduction -> actual audio ended event -> listen for one command
+-> stop/release microphone -> recognition -> website answer -> Tamil playback
+-> listen again. The introduction plays once per explicitly started session.
+
+The cloud microphone adapter uses an AudioWorklet and 16 kHz, 16-bit, mono PCM WAV.
+Each clip is at most 20 seconds / 640,044 bytes. A short pause ends the command;
+eight seconds without detected speech pauses listening without uploading audio.
+Very quiet speech/noisy rooms can affect this activity detection. Speak clearly
+near the microphone and use Resume if no command was detected.
+
+POST /api/assistant/recognize validates actual WAV header, rate, channels, size
+and duration before using the SDK. POST /api/assistant/speech validates Tamil
+text (900-character maximum) and returns bounded MP3 audio. Both require the
+existing same-origin request verification, applicable account CSRF, explicit
+speech consent, rate limits and a maximum of four concurrent speech jobs.
+Provider requests have a 25-second deadline. Stop aborts pending browser work;
+SDK objects close on completion, cancellation or error.
+
+No recordings are written to disk or a database. Audio is held only in memory for
+the current recognition request; server buffers are cleared after use. Voice
+turns do not create a conversation cookie or enter the legacy chat history.
+Recognised text and spoken answers never appear in the interface. Only activation,
+greeting and consent flags persist in session storage. Published website facts
+are used for answers; voice cannot create, approve, reject or change bookings.
+
+Errors are spoken in Tamil when a working Tamil engine is available. If the engine
+itself is unconfigured/offline or browser autoplay blocks playback, the panel shows
+the real error and a retry control. It cannot manufacture Tamil audio during a
+total provider outage and never substitutes English audio. The microphone is
+stopped during speech to avoid feedback: use the visible Stop speaking, Mute or
+Mic off button to interrupt playback. Voice stop commands work while Listening.
+
+EXACT MANUAL TEST
+
+1. Save valid Azure settings, restart the backend and refresh localhost:3000.
+2. Open JARVIS. Check the Azure audio-processing notice before starting.
+3. Click Start voice mode and allow microphone access if prompted.
+4. Hear the complete introduction:
+   வணக்கம்! நான் ஜார்விஸ். எம்.வி.ஆர் அவர்களின் AI உதவியாளர். உங்களுக்கு என்ன உதவி வேண்டும்? எம்.வி.ஆர் அவர்களைப் பற்றித் தெரிந்துகொள்ளவா, நிகழ்ச்சிகளைப் பார்க்கவா, அல்லது நிகழ்ச்சிக்கான தேதியைத் தேர்வு செய்யவா?
+5. Wait for Listening, then say: எம் வி ஆர் பற்றி சொல்லுங்கள்.
+6. Confirm a Tamil answer and automatic return to Listening.
+7. Try these separately, after each page opens:
+   முகப்புப் பக்கத்தைத் திற
+   எம் வி ஆர் பற்றிய பக்கத்தைத் திற
+   நிகழ்ச்சிகளை காட்டு
+   காணொளிகள் பக்கத்தைத் திற
+   கிடைக்கும் தேதிகளை காட்டு
+8. Ask: கிடைக்கும் தேதிகளைச் சொல்லுங்கள். Confirm published slots are spoken in
+   Tamil without claiming that an event is booked.
+9. Test Stop speaking, Resume, Mute and Mic off. No speech/recognition should start
+   after Mic off. Starting a new session deliberately repeats the introduction.
+10. Deny microphone permission and test a disconnected network. Expect an honest
+    status, Tamil guidance when audio remains available, and explicit retry.
+
+TEST RESULTS
+
+npm test: 78 passed, including Tamil voice lifecycle, Azure SDK contract tests,
+PCM limits, cancellation, authorization and existing booking/admin regressions.
+npm run build: JavaScript syntax and 36 HTML documents passed.
+Actual browser: native Tamil voice missing, microphone permission granted,
+browser ta-IN recognition network failure, and real AudioWorklet capture working
+with bounded WAV output. Diagnostic audio was discarded without uploading/saving.
+All five requested pages loaded with the Tamil assistant and no chat fields.
+The real /api/assistant/voice endpoint returned an approved Tamil biography with
+HTTP 200. With no Tamil device voice or Azure settings, activation correctly
+shows Tamil speech needs setup rather than claiming that speech is playing.
+After final cancellation guards were added, the 28 focused voice/SDK tests and
+the build passed again. The earlier complete 78-test regression suite passed.
+Live Azure audio and live spoken Tamil recognition must be verified with valid
+resource credentials; mocked provider tests are not proof of audible Tamil speech.
+
+FILES CHANGED
+
+backend/services/azure-speech.js        New official SDK service and PCM validation
+backend/routes/assistant.js            Tamil endpoints, limits and stateless voice
+backend/services/assistant-voice.js     Grounded Tamil replies and live Tamil dates
+backend/services/assistant-model.js    Tamil-only answer instructions
+frontend/js/jarvis-voice-commands.js    Tamil introduction, errors and safe commands
+frontend/js/jarvis-voice-audio.js       Tamil voice selection and Azure recognition
+frontend/js/jarvis-voice-session.js     Tamil lifecycle and recognition processing
+frontend/js/jarvis-voice-ui.js          Existing panel, accurate states/disclosures
+frontend/js/jarvis-pcm-capture.js       Bounded microphone capture and PCM encoding
+frontend/js/jarvis-pcm-worklet.js       Browser audio processing
+frontend/privacy.html                 Current processing/retention description
+package.json / package-lock.json      Official Microsoft SDK dependency
+.env.example                         Server-only Azure configuration template
+tests/tamil-voice.test.js              Migrated English tests plus Tamil commands
+tests/azure-speech.test.js             SDK/capture/format/cancellation tests
+tests/assistant.test.js                Secure endpoint and no-history regressions
+Earlier JARVIS setup guides            Marked superseded
+
+OFFICIAL REFERENCES
+
+https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support
+https://learn.microsoft.com/en-us/azure/ai-services/speech-service/quickstarts/setup-platform?pivots=programming-language-javascript
+https://learn.microsoft.com/en-us/javascript/api/microsoft-cognitiveservices-speech-sdk/speechconfig
+https://learn.microsoft.com/en-us/javascript/api/microsoft-cognitiveservices-speech-sdk/audioinputstream
+https://learn.microsoft.com/en-us/javascript/api/microsoft-cognitiveservices-speech-sdk/speechsynthesizer
+https://support.microsoft.com/en-us/accessibility/windows/narrator/appendix-a-supported-languages-and-voices

@@ -1,0 +1,336 @@
+SUPERSEDED: The active assistant now uses Tamil and Azure Speech. Read JARVIS-TAMIL-AZURE-SETUP.txt for current setup and verification.
+
+HISTORICAL: The active assistant now speaks English. See JARVIS-ENGLISH-VOICE-SETUP.txt for current instructions and verification.
+
+MVR JARVIS — implementation and operations
+Current interface: see JARVIS-TAMIL-VOICE-SETUP.txt. The bilingual chat UI below
+is historical; its backend/security details remain useful reference material.
+15 October 2026
+
+WHAT WAS ADDED
+
+JARVIS is integrated into the existing website, including public pages, user
+accounts and authorised admin workspaces. It has a floating launcher, cyan/navy
+panel, animated core, speech-state waveform, fullscreen mode, Tamil/English
+selection, text input, opt-in microphone and spoken replies, mute/replay/stop,
+clear chat, and reduced-motion support. The waveform indicates speech state;
+it is not a recording or a measurement of microphone volume.
+
+The voice update adds the exact requested English and Tamil greetings, a welcome
+card, Start Conversation, Replay greeting, a listening pulse, one-question voice
+submission, and direct navigation from explicit visitor commands. Voice settings
+and the greeting-attempt marker persist within the current browser tab.
+
+The site is a standalone Express/PostgreSQL application, not a WordPress runtime.
+The existing Astra media export and looping YouTube cards are preserved. JARVIS
+uses this application's authenticated backend; it is not a standalone HTML block
+that can safely be pasted into WordPress without a backend integration.
+
+EXISTING ARCHITECTURE AND REUSE
+
+Frontend: static HTML, scoped CSS and vanilla ES modules. main.js builds the
+existing public/account/admin shell and loads page modules. chatbot.js now
+initialises jarvis.js; the legacy widget is retained as initLegacy.
+
+Backend: Node.js, Express 5, PostgreSQL via pg, Zod schemas, Helmet CSP, same-origin
+checks, separate user/admin HttpOnly cookies, CSRF tokens and role middleware.
+Existing users, sessions, content_items, site_settings, availability_slots,
+bookings, booking_history, notifications, outbox and audit_logs are reused.
+
+Booking creation still uses POST /api/user/bookings and the existing six-step
+form. Transactions, stable row-lock ordering, duplicate checks and database
+constraints remain authoritative. Admin decisions reuse changeBooking(), which
+reserves/releases slots and queues the existing notifications. JARVIS never
+executes AI-generated SQL, JavaScript, shell commands or write tools.
+
+No migration is needed. No existing data was reset, seeded or rewritten to add
+JARVIS. Testing used disposable schemas in the separate TEST_DATABASE_URL.
+
+RUN AND CONFIGURE
+
+1. Keep your existing .env and database configuration. Do not overwrite .env.
+   If dependencies have not been installed, use: npm ci
+   This change adds no package dependencies.
+
+2. Optional real AI: place your own key in server environment configuration:
+
+   OPENAI_API_KEY=your_server_side_key
+   OPENAI_MODEL=gpt-5.4-mini
+
+   .env.example contains an empty key and the model default. Never put a key in
+   frontend files, browser storage, a CMS content item or a chat message.
+   Use a supported Responses API model available in your OpenAI project. The
+   model is configurable because availability changes. Set appropriate provider
+   project budgets/alerts and monitor usage before broad rollout.
+
+3. Start the normal application with npm start (or npm run dev for development).
+   Restart an existing process after backend/environment changes. The normal
+   server runs the existing notification worker; configured integrations may
+   send queued notifications as they did before.
+
+   For a local preview without processing notification jobs:
+   node --env-file-if-exists=.env scripts/preview-server.js
+
+   The preview binds only to 127.0.0.1, uses the existing DB and does not migrate
+   or seed. Stop it before starting another server on the same port.
+
+4. Open the site and select JARVIS. Website-information mode works without a key.
+   With a configured key, expand Language, voice & privacy and explicitly enable
+   OpenAI processing to get AI replies. Provider outages fall back to labelled
+   website information. A configured key alone does not mean a paid request has
+   been successfully tested.
+
+5. For production, use the existing deployment workflow: HTTPS, correct
+   APP_ORIGIN, NODE_ENV=production and trusted-proxy configuration only for your
+   known proxy. Run npm ci --omit=dev in a release directory, deploy backend and
+   frontend changes together and restart the service. Do not rerun seed or
+   generate-pages.js to install JARVIS. No migrations are introduced here.
+   Verify /api/health and /api/assistant/config, then test chat and booking with
+   non-production records before opening access. Secrets stay in the hosting
+   environment, outside static assets and release archives.
+
+AI AND KNOWLEDGE
+
+The server calls https://api.openai.com/v1/responses using native fetch, with
+store:false, strict function schemas and a structured JSON reply schema.
+The three model tools are search_knowledge, check_availability and suggest_page.
+Every call passes a server registry and Zod argument validation. Invalid tool
+requests return a safe failure. Tool execution is limited to four calls and
+three provider requests per message. Maximum output is 1,400 tokens per provider
+request and 2,500 characters for the displayed answer; history is six turns.
+The provider deadline is 20 seconds and the browser request deadline 25 seconds.
+
+Knowledge includes owner-supplied core facts from the JARVIS brief, published CMS
+rows, published contact settings and the existing curated video selection.
+Unpublished CMS items, HOMEPAGE-TAMIL-REVIEW.txt and ABOUT-TAMIL-REVIEW.txt are not
+read as knowledge. Search uses parameterised lexical queries with bounded
+results, not a vector database. Existing official names are preserved, including
+Ethal Arakattalai Trust. Fallback replies quote records in their published
+language; publish approved Tamil text in the CMS for official translations.
+
+The AI is instructed to ask for clarification, understand Tamil/Tanglish, admit
+unknown facts, distinguish suggestions from facts and consult live availability
+for each date-related answer. Model responses can still be inaccurate: users
+must verify important facts. Links are rendered separately from plain text and
+validated against predefined route keys; source URLs come from controlled data.
+AI-generated page suggestions require clicking a displayed link. Separately,
+explicit visitor commands such as "JARVIS, open the home page", "Show me about
+MVR", "Open programmes", "Play MVR videos", "Go to the media page" and "Help me
+book MVR" are parsed against a fixed route allowlist in jarvis-navigation.js.
+Tamil and common Tanglish commands are supported. Questions, negations, multiple
+destinations, admin routes and arbitrary URLs do not trigger navigation.
+Spoken confirmation finishes before navigation; unavailable/blocked speech uses
+the text fallback. Stop, Close, Mute, language change or page hiding cancels
+pending navigation. AI text cannot initiate navigation. The YouTube/Instagram route
+anchors scroll to the existing page sections. Instagram remains a profile link
+unless real posts have been published; no feed connection is invented.
+
+DATA, PRIVACY AND LIMITS
+
+AI processing starts OFF, even with a key. The panel and /privacy.html describe
+external processing, browser speech, retention and clear controls. store:false
+is not a promise of zero provider retention: abuse-monitoring logs may apply.
+
+New JARVIS conversations are stored only in process memory, tied to an HttpOnly
+cookie and (when signed in) the validated account. They expire after 30 minutes,
+with cleanup within one minute, and retain at most six turns. Clear chat deletes
+the active server conversation, cancels pending work and clears the panel.
+Expiry/restart loses context. No JARVIS transcripts or raw audio are written to
+PostgreSQL or application logs. The existing legacy /api/chat API remains
+available with its previous database retention; JARVIS does not call it.
+
+The memory implementation and rate-limit stores are suitable for one process.
+Before multi-worker/server deployment, replace them with a shared TTL/lock store
+(such as your managed Redis service), preserving ownership, atomic busy checks,
+expiry and clear semantics. Sticky sessions alone do not enforce global limits.
+Capacity is capped at 1,000 simultaneous temporary conversations. The ordinary
+site remains available when the assistant reaches capacity.
+
+Limits: 1,000 characters per input; 20 assistant requests/minute per IP for chat,
+search, availability and drafts; 60 chat requests/hour per validated account or
+anonymous IP; existing global 300 API requests/minute and 64 KB body limit also
+apply. Only one chat request per conversation runs at a time. Configuration and
+clear requests are outside the assistant-specific limiter but inside the global
+API limiter, so users can clear after reaching chat limits.
+
+Obvious emails, phone numbers, booking references and password/token assignments
+are intercepted before AI/history. This is a helpful filter, not complete PII
+detection. Users should keep personal information out of chat. Event drafts,
+account booking lists and admin decisions are separate from the model context.
+
+VOICE
+
+On a first visit, a welcome card displays the exact greeting and Start
+Conversation. Start explicitly enables browser speech, Voice + text and Send
+final transcript, as explained beside the button. It speaks the greeting but
+does NOT start the microphone. Choose Tamil or English in the visible selector;
+an explicit language change speaks that greeting when voice is enabled/unmuted.
+
+The fixed public greeting is attempted automatically once while the first-visit
+welcome is visible and the tab is unmuted. The browser decides whether autoplay
+can start. This does not enable microphone access, spoken chat replies or AI.
+It is marked before the attempt, including if autoplay fails, to prevent repeated
+attempts on refresh/navigation. Start Conversation remains visible if blocked;
+Replay greeting explicitly repeats it after speech consent. If sessionStorage
+is blocked, automatic greeting is disabled. Text chat still works.
+
+Supported recognition uses SpeechRecognition/webkitSpeechRecognition, ta-IN or
+en-IN, an explicit Start Listening click, one utterance and a 15-second cap.
+In Send final transcript mode, the final transcript stops recognition and sends
+one question to the assistant backend; interim results never submit. Select
+Review transcript to edit before Send. Start Conversation enables automatic
+final-transcript submission; manual speech consent starts in review mode.
+No new listening cycle begins after a greeting or reply. Stop, close, language
+change, page hiding and speech-consent withdrawal stop voice capture/playback.
+Permission denial, no microphone, no speech, network errors and unsupported
+recognition have text fallbacks. The site never requests permission on load.
+
+Spoken replies use speechSynthesis, preferring an exact language match and then
+another voice in the same language. An initially empty voice list waits up to
+1.5 seconds for voiceschanged. Playback uses onstart/onend/onerror, a 3-second
+start deadline and a 60-second safety cap. Blocked autoplay leaves Start
+Conversation and Replay greeting available. Missing language voices keep the
+response as text. Voice + text is opt-in; replies over 450 characters are not spoken
+automatically. Replay, Mute/Unmute and Stop are separate controls. Browser or
+device speech providers may process audio/text; actual hardware/browser support
+must be tested on deployment devices. No universal compatibility is claimed.
+
+sessionStorage stores only voice UI preferences, consent, a greeting-attempt
+marker and a validated page-arrival key. It does not store chat/audio or AI
+consent. AI consent is separate and starts OFF on each page. A navigation command
+opens the assistant on the destination without speaking the greeting again.
+The separate booking-return marker accepts only the literal value "booking";
+it cannot redirect to an arbitrary URL after login.
+
+BOOKING AND ADMIN WORKFLOW
+
+Prepare enquiry reads the same event choices as the existing booking form and
+current available dates. A form collects event/date/time/venue/city/audience/
+language/notes. The user reviews it and explicitly continues. The draft endpoint
+rechecks actual slots, including both halves for Full Day. It does not create a
+booking. The validated draft goes through same-tab sessionStorage to the normal
+booking page; login/registration now returns to this pending draft. Contact
+details stay in the normal form. Its existing review, acknowledgement and Submit
+Enquiry action create the record, after another transaction-protected check.
+Only the actual server response supplies a reference. Initial status is NEW.
+
+My enquiries calls the existing authenticated user endpoint, which filters by
+the session's user ID. No user-ID or role parameter from the browser is trusted.
+No new user cancellation capability is implied.
+
+Admin review lists minimal pending-record details. SUPER_ADMIN and BOOKING_MANAGER
+may approve/reject; VIEWER may read; content-only staff cannot access records.
+Full details and availability management link to the existing protected admin
+pages. Each decision requires an explicit review checkbox and customer message.
+The server authenticates, checks CSRF and role, validates the entire request and
+checks the exact record revision while holding the existing booking/slot locks.
+A changed, already-decided or retried record returns 409; review again. There is
+no AI write tool. Audit entries contain actor, time, action, booking ID and status
+changes. Existing notification and reservation rules remain in force.
+
+API SURFACE
+
+GET    /api/assistant/config             Public capabilities; no secrets
+GET    /api/assistant/knowledge/search?q= Published bounded knowledge
+GET    /api/assistant/availability?date= Future public slots (IST)
+POST   /api/assistant/chat               message, language, ai_consent
+DELETE /api/assistant/conversation       Clear the owned temporary history
+POST   /api/assistant/booking-draft      Reviewed event draft; no creation
+GET    /api/admin/assistant/bookings     Authorised pending list, max 30
+POST   /api/admin/assistant/bookings/:id/decision
+       action approve/reject, version, confirmed true, customer message
+
+Authenticated writes require the existing X-CSRF-Token. All writes require
+X-MVR-Request: 1 and pass existing same-origin checks. Ordinary booking creation,
+user status and availability management continue using their original routes.
+
+FILES CREATED
+
+backend/routes/assistant.js
+backend/routes/assistant-admin.js
+backend/services/assistant-knowledge.js
+backend/services/assistant-model.js
+backend/services/assistant-memory.js
+frontend/js/assistant-routes.js
+frontend/js/booking-options.js
+frontend/js/jarvis.js
+frontend/js/jarvis-voice.js
+frontend/js/jarvis-session.js
+frontend/js/jarvis-navigation.js
+frontend/css/jarvis.css
+scripts/preview-server.js
+tests/assistant.test.js
+tests/assistant-unit.test.js
+tests/jarvis-voice-navigation.test.js
+JARVIS-SETUP.txt
+
+FILES MODIFIED
+
+backend/app.js                 Mount assistant routes; test dependency injection
+backend/routes/availability.js Reuse the public-safe slot field projection
+backend/services/bookings.js   Optional revision guard within existing locks
+frontend/js/api.js             Optional AbortSignal support
+frontend/js/auth.js            Return to pending booking draft after sign-in
+frontend/js/booking.js         Shared existing event choices
+frontend/js/chatbot.js         JARVIS entry point; retain legacy widget
+frontend/js/main.js            Initialise assistant with current area/session
+frontend/privacy.html         English/Tamil assistant privacy information
+.env.example                  Server-only optional OpenAI settings
+
+VERIFICATION
+
+npm run build: passed; JavaScript syntax and all 36 HTML pages checked.
+npm test: 47/47 passed, including existing authentication, migrations, booking
+concurrency, Full Day, exports, CMS/media, integration adapters and permission
+regressions. The 19 assistant/voice/navigation tests also pass independently.
+
+New tests cover published-only retrieval, SQL-injection-shaped text, unknown
+tools, forbidden routes, malformed provider output, bounded provider loops,
+consent, history ownership/expiry/clear/capacity, intercepted private details,
+Tamil/English/Tanglish fallback, CSRF/origin/RBAC, draft review and availability,
+no draft booking side effects, duplicate creation, stale/retried admin decisions,
+approval/rejection, double-booking protection and audit records. Voice tests use
+injected browser API fakes for unsupported/denied/missing-voice/stop cases.
+The voice update tests also cover exact bilingual greetings, consent/session
+repeat prevention, delayed voice discovery, blocked/silent synthesis, one final
+transcript, stale callbacks, navigation completion/cancellation, allowlisted
+login return and approved named-series replies without a model provider.
+
+Browser QA used a separate synthetic database: desktop panel, Tamil reply,
+reviewed Full Day draft, login handoff, original six-step form, actual NEW
+enquiry, admin review/explicit approval and actual CONFIRMED result. Normal
+page interactions, fullscreen, keyboard close, clear chat, mute, reduced-motion
+CSS, tablet 768x1024 and mobile 390x844 / compact 320x568 and 320x420 layouts were
+inspected. Privacy-panel overflow on compact screens was fixed and rechecked.
+The two temporary browser-QA schemas created for this work were removed after
+verification; older schemas and the application database were left intact.
+
+Voice-update browser QA checked the welcome card, Start Conversation, Tamil
+selection and its real missing-voice fallback, About/Programmes/Media commands,
+assistant reopening without repeat speech, a source-linked Pattimandram reply,
+and refresh preserving language/voice preferences without repeating the welcome.
+The 320x420 expanded privacy layout was corrected to keep input/Stop reachable.
+
+LIMITATIONS / ACTIVATION CHECKS
+
+No OPENAI_API_KEY was configured during implementation. The real Responses
+contract/tool flow was exercised with mocked provider responses; no paid live
+model request was made. Live answer quality, Tamil/Tanglish model behaviour and
+provider project permissions need a small end-to-end check after key setup.
+Website-only replies are implemented and tested now.
+
+Microphone hardware, actual recognition and audible Tamil/English playback were
+not exercised. Test consent, denial, final/interim transcripts, missing voices,
+mute/replay/stop and close on each supported browser/device. Tests here verify
+the controller logic using fakes and the rendered text fallback/settings.
+
+REFERENCES CONSULTED
+
+https://developers.openai.com/api/docs
+https://developers.openai.com/api/docs/guides/function-calling
+https://developers.openai.com/api/docs/guides/structured-outputs
+https://developers.openai.com/api/docs/models/gpt-5.4-mini
+https://developers.openai.com/api/docs/guides/your-data
+https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis/voiceschanged_event
+https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesisUtterance/error_event
+https://developer.mozilla.org/en-US/docs/Web/API/UserActivation

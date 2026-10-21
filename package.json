@@ -1,0 +1,30 @@
+{
+  "name": "mvr-booking-platform",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env backend/server.js",
+    "dev": "node --env-file-if-exists=.env --watch backend/server.js",
+    "db:migrate": "node --env-file-if-exists=.env backend/migrate.js",
+    "migrate": "npm run db:migrate",
+    "seed": "node --env-file-if-exists=.env scripts/seed.js",
+    "build": "node scripts/check.js",
+    "admin:create": "node --env-file-if-exists=.env scripts/create-admin.js",
+    "test": "node --env-file-if-exists=.env --test --test-concurrency=1 tests/*.test.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "docx": "^9.10.0",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "microsoft-cognitiveservices-speech-sdk": "1.52.0",
+    "nodemailer": "^10.0.16",
+    "pg": "^8.16.3",
+    "zod": "^4.1.0"
+  }
+}

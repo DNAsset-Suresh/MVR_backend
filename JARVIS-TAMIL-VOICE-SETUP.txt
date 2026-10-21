@@ -1,0 +1,217 @@
+SUPERSEDED: The active assistant now uses Tamil and Azure Speech. Read JARVIS-TAMIL-AZURE-SETUP.txt for current setup and verification.
+
+HISTORICAL: The active assistant now speaks English. See JARVIS-ENGLISH-VOICE-SETUP.txt for current instructions and verification.
+
+MVR JARVIS — Tamil voice-only upgrade
+15 October 2026
+
+CURRENT INTERFACE
+
+This guide supersedes the bilingual chat-interface instructions in JARVIS-SETUP.txt.
+The existing Express/PostgreSQL site is retained. No pages, database records,
+booking forms, admin features or media links were replaced. No migration or
+dependency installation is required for this upgrade.
+
+chatbot.js now loads jarvis-tamil-ui.js. The earlier bilingual UI modules remain
+as inactive compatibility source; current pages never initialise their chat UI.
+There is no text entry, chat log, transcript, subtitle or written answer in the
+active assistant. The orb/wave animation indicates state, not microphone volume.
+The assistant uses Tamil status labels and Tamil speech exclusively.
+
+ACTIVATION AND SESSION BEHAVIOUR
+
+Open the compact microphone launcher, then press “குரல் முறையை இயக்கு” to activate.
+When voice mode is off the launcher stays compact so the site's calendar and
+forms remain usable. Click elsewhere to collapse the inactive panel. Microphone
+off or Escape disables the session and collapses it. The brief notice explains browser speech
+processing, automatic listening after replies and any configured AI provider.
+The app first checks microphone permission and requests normal microphone access
+only if it is not already granted. It releases any permission-probe stream
+immediately; it never records that audio. It then initialises Tamil speech output.
+It speaks the requested self-introduction once, then starts recognition with lang=ta-IN.
+Listening is displayed only after the recogniser's actual onstart event.
+
+The introduction starts “வணக்கம்! நான் ஜார்விஸ். எம் வி ஆர் அவர்களின் ஏ ஐ
+உதவியாளர்.” and offers the biography, programmes and date-selection options.
+Initials are spelled in Tamil for pronunciation. Navigation and ordinary resume
+do not repeat it. Turning voice mode off and deliberately starting again creates
+a new session. An introduction blocked before playback is retried on activation.
+
+Voice discovery waits up to five seconds, using voiceschanged plus polling.
+The native queue is resumed if paused before speak(); the active utterance stays
+referenced until its end/error event. Neither listening nor another cancellation
+starts during speech. Permission checks time out after 30 seconds; a probe stream
+arriving after stop/timeout is still released. If autoplay blocks already-loaded
+output, press “குரலை மீண்டும் இயக்கு”. This retries that output synchronously in
+the click, without another download. Failed output is held only temporarily in
+memory and discarded on pause/mute/off. No recording or transcript is persisted.
+
+Recognition uses one utterance at a time. Only a final transcript is processed,
+internally, without inserting it into the page. A successful spoken reply ends
+before the next listening cycle begins. Recognition is not active during speech,
+so the assistant does not hear its own answer. Listening has a 25-second cap.
+Permission denial, silence, unexpected end, failed playback, tab hiding or network
+failure pauses the cycle and shows a Tamil status plus a visible resume button.
+An error is spoken in Tamil when a working speech output is available.
+
+The orb pauses/resumes. “ஒலியை அணை” mutes and stops listening as well as speaking.
+“பேச்சை நிறுத்து” stops playback, requests and pending navigation; it leaves the
+session paused. “மைக் ஆஃப்” disables the session and attempts to clear its server
+conversation. There is no automatic restart after these choices. Explicit resume
+or unmute is required. Saying “நிறுத்து, ஜார்விஸ்” pauses; “மைக் ஆஃப் செய்” disables.
+
+The current tab keeps only voice-session flags and provider-consent flags with a
+30-minute expiry. It never stores transcripts/audio. A voice-command navigation
+keeps the greeting marker and queries actual browser microphone permission on
+the destination. It resumes without another greeting only if permission is
+already granted, voice mode is still active/unmuted and the browser allows it.
+If permission cannot be queried, it asks for a resume click rather than prompting
+on page load. Hidden pages stop activity. Reloading cannot override a saved pause.
+
+TAMIL AUDIO OPTIONS
+
+1. Device speech: uses only a Tamil browser voice (ta-IN preferred). A known
+   Tamil male voice such as Valluvar is preferred when exposed by the device.
+   Browser voice lists have no standard gender field; if only another Tamil
+   voice is available, that Tamil voice is used. No English voice fallback exists.
+
+2. Optional server speech: configure the existing server environment, keeping
+   secrets out of frontend code and chat:
+
+   OPENAI_API_KEY=your_server_side_key
+   OPENAI_MODEL=gpt-5.4-mini
+   JARVIS_CLOUD_SPEECH=true
+   OPENAI_TTS_MODEL=gpt-4o-mini-tts
+   OPENAI_TTS_VOICE=onyx
+
+   Do not overwrite the existing .env. .env.example contains placeholders/defaults.
+   Cloud speech defaults OFF and only runs when enabled, configured, disclosed and
+   accepted through voice activation. The app prefers a device Tamil voice and
+   uses the server fallback when none is available, or when the native Tamil
+   engine reports a synthesis/voice failure before speaking. This uses paid provider APIs.
+   Model/voice settings stay server-side. The TTS instruction requests natural,
+   respectful Indian Tamil with a calm masculine delivery; listen and validate
+   pronunciation/voice quality before deployment. Built-in voices are not an
+   imitation of MVR or any real speaker.
+
+   The server POSTs to the fixed OpenAI /v1/audio/speech endpoint, requests MP3,
+   accepts at most 900 Tamil characters, times out after 20 seconds and limits
+   output to 2 MiB. Audio is not saved to disk or database. Browser blob URLs are
+   revoked on end/cancel. The CSP permits blob: for media playback only.
+
+If neither option is ready, the widget says “தமிழ்க் குரல் கிடைக்கவில்லை”. It does
+not pretend to listen, display an answer or silently switch to English. This is
+the current local-device limitation: no Tamil voice was available and no OpenAI
+key was configured during verification. A usable speech option is required to
+run the full voice conversation on this machine. We did not install OS voices.
+
+START THE EXISTING SITE
+
+npm run build
+npm start
+
+Or preview without the notification worker, seeds or migrations:
+node --env-file-if-exists=.env scripts/preview-server.js
+
+Restart the server after environment/backend changes. Refresh open browser pages
+to load the Tamil interface. Use HTTPS in production; localhost works for local
+microphone testing. Existing deployment, authentication and database settings
+remain applicable. Do not run generate-pages.js or seed to install this upgrade.
+
+COMMANDS AND ANSWERS
+
+The only voice navigation destinations are:
+  Home          /
+  About         /about.html
+  Programmes    /programmes.html
+  Media         /media.html
+  Availability  /availability.html
+
+Examples: “ஜார்விஸ், முகப்புப் பக்கத்தைத் திற”, “நிகழ்ச்சிகள் பக்கத்தைத் திற”,
+“ஊடகப் பக்கத்திற்குப் போ”, “காலியுள்ள தேதிகளைப் பார்க்க வேண்டும்”, and
+“மீண்டும் முகப்புப் பக்கத்திற்குப் போ”. Common mixed commands such as
+“about page open pannu” work. “எம்.வி.ஆர் பற்றி சொல்லு” is a question, not navigation.
+Multi-page commands, negations, arbitrary URLs and admin routes do not navigate.
+Recognition accuracy depends on the device/browser. Ambiguous requests get a
+Tamil response rather than an invented destination.
+
+Explicit navigation is parsed against the same fixed allowlist on client/server.
+It executes only after spoken confirmation completes. Model output never triggers
+navigation or a write operation. Booking guidance is spoken; the existing secure
+booking form and admin interfaces remain the only places for their normal actions.
+
+Questions use the existing Responses integration and approved published content,
+when configured and consented. A voice-specific prompt requests Tamil script,
+short conversational answers, no URLs and no English sentences. Output containing
+Latin letters or unsafe markup is rejected and replaced with a verified Tamil
+fallback. Known biographies and selected series have approved Tamil fallbacks.
+English CMS paragraphs are not spoken as English; without AI translation the
+assistant directs visitors to the published programme page. Unknown awards,
+education, prices and other facts are not invented. Availability questions bypass
+the language model and read actual selectable database slots, using Tamil dates
+and half-day names. Availability is never treated as booking confirmation.
+
+API AND PRIVACY
+
+GET  /api/assistant/config   Capability flags and fixed voice routes; no secrets
+POST /api/assistant/voice    {message, ai_consent}; Tamil speech text + safe action
+POST /api/assistant/speech   {text, cloud_consent:true}; bounded MP3 response
+
+Existing chat/draft/admin endpoints remain compatible and retain authentication,
+CSRF, origin checks, role checks, transactions and audit rules. The new voice UI
+does not call any booking/admin write endpoint. Voice and speech share existing
+assistant limits: 20 requests/minute/IP and 60 per hour/account-or-public-IP.
+With cloud audio, one question may use two requests. Recognition pauses on limits.
+
+Internal questions/answers retain the existing six-turn, 30-minute server memory
+policy. Nothing is placed in the UI, database or app logs as a new transcript.
+Browser recognition can use its provider's servers. Optional OpenAI calls have
+their provider retention policies; store:false is not a zero-retention guarantee.
+The page privacy section has been updated to explain these details in English
+and Tamil. Sensitive details belong in the normal booking form.
+
+FILES
+
+frontend/js/jarvis-tamil-ui.js        Voice-only DOM, controls and API wiring
+frontend/js/jarvis-tamil-audio.js     Tamil speech/recognition driver
+frontend/js/jarvis-tamil-session.js   Permission-aware conversation lifecycle
+frontend/js/jarvis-tamil-commands.js  Five-route parser and Tamil speech validation
+frontend/css/jarvis-tamil.css         Scoped responsive visuals
+backend/services/assistant-tamil.js  Grounded Tamil replies and optional TTS
+backend/routes/assistant.js          New voice/speech routes, existing safeguards
+backend/services/assistant-model.js  Tamil-only spoken-response instructions
+frontend/js/chatbot.js               Active entry point
+tests/tamil-voice.test.js             State, driver, commands and TTS contracts
+tests/assistant.test.js              Voice API/security integration tests
+
+VALIDATION
+
+66 tests passed, including existing booking/auth/admin/database/media regressions
+and 19 Tamil voice/API cases. Browser checks covered all five public pages,
+no chat/transcript/input surfaces, activation, actual missing-Tamil-voice status,
+mute/stop/disable and responsive layout. Unit tests use injected speech APIs for
+the full greeting/listen/question/speak/resume cycle, permission denial, correct
+Tamil voice selection, stop during a request, stale responses, navigation timing
+and resuming on the next page without a duplicate greeting. API tests cover
+consent, CSRF, private data, Tamil-only output, fixed routes and cloud MP3 contract.
+
+For the self-introduction/playback fix, see JARVIS-VOICE-FIX-REPORT.txt. The actual
+browser exposed only Microsoft David, Mark and Zira (all en-US); speech synthesis
+and recognition APIs existed, permission was already granted, and the queue was
+idle. No Tamil voice existed and cloud speech was disabled. A diagnostic observer
+recorded zero synthesis calls, which confirms the missing-engine guard stopped
+activation rather than cancellation cutting speech short. No console errors.
+
+Real microphone transcription and audible Tamil playback remain unverified on
+this device because no Tamil voice/cloud credential is configured. No live paid
+provider call was made. Verify pronunciation, microphone permission, speech
+quality and autoplay on actual deployment devices once audio is configured.
+
+REFERENCES
+
+https://developers.openai.com/api/docs/guides/text-to-speech
+https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create
+https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition
+https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia
+https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis/voiceschanged_event
+https://developer.mozilla.org/en-US/docs/Web/API/SpeechSynthesis/resume

@@ -1,0 +1,191 @@
+SUPERSEDED: The active assistant now uses Tamil and Azure Speech. Read JARVIS-TAMIL-AZURE-SETUP.txt for current setup and verification.
+
+MVR JARVIS — English voice-only assistant
+15 October 2026
+
+CURRENT IMPLEMENTATION
+
+This guide supersedes JARVIS-TAMIL-VOICE-SETUP.txt and the earlier Tamil repair
+report. The existing Express/PostgreSQL site, five public pages, booking forms,
+admin features and animated dark JARVIS interface are preserved.
+
+All active assistant speech is English: introduction, answers, follow-ups,
+errors, navigation confirmations, booking guidance and live availability.
+There is no chat window, text input, transcript, subtitle or written answer.
+Only controls, brief status labels and permission/provider notices are visible.
+
+The exact introduction is:
+Hello! I am JARVIS, your MVR AI Assistant. I am here to help you explore the MVR website, learn about MVR's programmes, watch media content, and check event availability. What would you like to know today?
+
+Open the microphone launcher, then select Start voice mode. Microphone permission
+is checked before speech preparation. A new session speaks the introduction,
+waits for its real end event, then starts listening. The introduction is not
+repeated after questions, resume or voice navigation. Mic off followed by Start
+voice mode deliberately creates a new session. English uses a separate session
+flag key so an old Tamil session cannot skip the English welcome.
+
+DEVICE SPEECH AND RECOGNITION
+
+English device speech needs no API key. The app prefers en-IN, then an available
+English default/device voice. Speech uses the chosen voice's actual English
+locale (for example en-US for Microsoft David); recognition defaults to en-IN.
+Delayed voice lists are checked via voiceschanged and polling for five seconds.
+The utterance is retained until end/error; a paused queue is resumed before speak.
+Recognition is stopped before playback and restarts only after completed speech.
+An idle or already-completed speech queue is not cancelled. Playback has up to
+ten seconds to start, allowing the browser to release recognition's audio device.
+
+Where available, an installed on-device English recognizer is preferred: en-IN,
+then en-US. If only online recognition is available, the normal browser service
+is used. Online recognition can fail even when the website is reachable.
+If that happens and the browser offers an English pack, Enable offline recognition
+offers an explicit download. No pack is installed on page load or normal activation.
+The browser manages downloads; a download may finish after Stop, but Stop prevents
+automatic microphone restart. Installation has a two-minute application timeout.
+
+Mute stops speech and listening; Stop speaking pauses the session; Mic off disables
+it and clears the temporary server conversation when reachable. Resume is explicit
+after any pause, permission failure, browser interruption or timeout. Hidden pages
+stop activity. No raw audio or transcript is recorded by this website. Recognition
+services may process audio according to their policies. No English voice is ever
+replaced with a voice from another language.
+
+AUTOPLAY AND ERRORS
+
+The widget shows Listening only after the recognizer's real start event and
+Speaking only after actual audio playback starts. Errors are announced in English
+when audio works. If playback itself is blocked, Retry voice reuses prepared output
+inside the click without another fetch. Stop/mute/off discard pending retries.
+Missing engines or blocked audio have an accessible status and visible retry control.
+
+ENGLISH COMMANDS
+
+Open the home page.             /
+Open the about page.            /about.html
+Show me the programmes.         /programmes.html
+Open the media page.            /media.html
+Check available dates.          /availability.html
+Go back to the home page.       /
+Tell me about MVR.              Spoken answer from approved website information
+Read the available dates.       Live published database availability
+Stop speaking.                 Pause
+Turn off the microphone.        Disable voice mode
+
+Only the five listed pages can be opened by voice, after the spoken confirmation
+finishes. Questions do not automatically navigate. Negations, combined commands,
+arbitrary URLs and admin actions are rejected as navigation. Voice cannot create,
+change, confirm or cancel bookings. Existing account and administrator permissions,
+CSRF checks and database transactions remain in force.
+
+Answers use published website content and owner-approved English facts. Published
+Tamil programme text is translated by the configured model when available; without
+that model, JARVIS explains the missing English information rather than reading
+Tamil aloud or inventing details. Availability always reads current selectable
+database slots and speaks English dates and Indian Standard Time. It is never a
+booking confirmation. Explicit ISO dates can filter the query; ambiguous/spoken
+dates should be checked on the availability page.
+
+OPTIONAL SERVER AI / SPEECH
+
+The current device voice works without a cloud speech key. AI answers and optional
+cloud TTS use the existing server-only environment configuration:
+
+OPENAI_API_KEY=your_server_side_key
+OPENAI_MODEL=gpt-5.4-mini
+JARVIS_CLOUD_SPEECH=true
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
+OPENAI_TTS_VOICE=onyx
+
+Do not put keys in frontend files or chat. Do not overwrite the existing .env.
+Restart after environment changes. Cloud speech remains off unless configured and
+accepted through the activation disclosure. It is a paid provider API. Native
+English speech is preferred. Generated speech is disclosed as synthetic.
+The English voice API rejects non-Latin scripts, markup, URLs and control characters;
+the model is instructed to use English for all speech regardless of user/history
+language. Rejected model output gets a grounded English fallback.
+
+GET  /api/assistant/config   English locale and provider capability flags
+POST /api/assistant/voice    {message, ai_consent}; English speech and safe action
+POST /api/assistant/speech   {text, cloud_consent:true}; optional bounded MP3 output
+
+Keys stay server-side; no new provider or external destination was introduced.
+Raw microphone audio never reaches the MVR backend. The existing bounded temporary
+conversation history is unchanged. The frontend stores only flags, not transcripts.
+The previous bilingual chat modules remain inactive compatibility source; current
+pages import only the English voice UI. Ordinary website content stays as published.
+
+START AND VERIFY
+
+npm run build
+npm test
+node --env-file-if-exists=.env scripts/preview-server.js
+
+The preview disables outbound notification workers and does not seed or migrate.
+Refresh the browser after changes. Use HTTPS in production; localhost is supported
+for microphone access. Voice recognition support depends on the browser/device.
+
+VALIDATION — 15 OCTOBER 2026
+
+- npm run build passed: JavaScript syntax and all 36 HTML documents validated.
+- npm test passed: 70 tests, including 21 English voice tests, real PostgreSQL
+  booking/admin/authentication tests and assistant API integration tests.
+- The actual browser played the exact English introduction using Microsoft David
+  (en-US). The user confirmed that it was clearly audible.
+- Online en-IN recognition initially reported a browser network error. Its English
+  error announcement played. With the user's explicit approval, the browser's
+  English recognition pack was installed; en-IN and en-US now report available.
+- Actual local en-IN recognition started with processLocally=true, opened/released
+  the microphone and no longer produced the online service's network error.
+- After a local recognition session ended, the English interruption announcement
+  had real speech start and end events, without premature cancellation.
+- A controlled final recognition result, "Tell me about MVR", exercised the real
+  UI, backend response and native speech. The English biography played for about
+  18.5 seconds; local recognition restarted after the actual speech-end callback.
+  Only the recognition result was simulated, not the backend or speech playback.
+- Home, About, Programmes, Media and Availability loaded in the actual browser.
+  Each had the English voice assistant with zero chat inputs/transcript surfaces.
+  The live availability calendar rendered. The existing panel also fit a 390px
+  mobile viewport without horizontal overflow.
+- Temporary browser observers/command fixtures were removed by navigation. The
+  QA microphone was turned off. No personal recording or transcript was saved.
+
+REMAINING BROWSER LIMITATIONS
+
+The user's own spoken command has not yet been observed producing a recognition
+result during this test. The pack installation and microphone lifecycle are
+verified; live transcription accuracy remains a manual check. Start voice mode
+and say "Tell me about MVR" or "Open the media page" to check your microphone.
+Installed voices, accent and recognition support vary by browser/device; this
+device has en-US speech, so en-IN pronunciation is not guaranteed. Silence,
+permission denial or recognition interruption pauses the session with Resume.
+During assistant speech the microphone is stopped to prevent feedback; use the
+visible Stop speaking or Mic off button to interrupt immediately. Voice commands
+are accepted while Listening. Cloud AI/TTS was tested with provider fixtures,
+not a live paid API call; native English speech works without a provider key.
+
+CHANGED FILES
+
+Renamed the active Tamil modules to neutral voice names and updated imports:
+frontend/js/jarvis-voice-commands.js   English introduction, messages, route parser
+frontend/js/jarvis-voice-audio.js      English synthesis/recognition, local pack setup
+frontend/js/jarvis-voice-session.js    English-only lifecycle, retry and download flow
+frontend/js/jarvis-voice-ui.js         Existing UI with English controls/status
+frontend/css/jarvis-voice.css          Existing visuals, optional download spacing
+backend/services/assistant-voice.js   English grounded replies and optional TTS
+tests/english-voice.test.js            English command/audio/session regressions
+
+Also updated:
+frontend/js/chatbot.js                Active English UI entry point
+backend/routes/assistant.js           English voice API validation and responses
+backend/services/assistant-model.js   English-only spoken answer instructions
+tests/assistant.test.js               English voice and cloud-speech API assertions
+frontend/privacy.html                Current voice language and optional pack notice
+.env.example                         English speech fallback description
+Earlier JARVIS guides/reports         Marked historical and linked to this guide
+
+REFERENCES
+
+https://developers.openai.com/api/docs/guides/text-to-speech
+https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition
+https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition/available_static
+https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition/processLocally

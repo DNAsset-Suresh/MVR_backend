@@ -1,0 +1,76 @@
+MVR YouTube marquee — WordPress / Astra installation
+
+Complete files
+• mvr-youtube-paste.html: all-in-one HTML + CSS + JavaScript block.
+• mvr-youtube.html: markup only.
+• mvr-youtube.css: CSS only, including the keyframes and banner styles.
+• mvr-youtube.js: JavaScript only; creates equal copies and operates Pause.
+• preview.html: standalone browser preview; keep the CSS/JS files beside it.
+
+Option A — paste one block
+1. Edit your Media / Videos page in WordPress.
+2. Add a Custom HTML block in the content area. If using Elementor, add an HTML widget inside the intended container. In a Spectra layout, use a core Custom HTML block inside its container.
+3. Copy the entire contents of mvr-youtube-paste.html into that block/widget. Do not paste the full block into Astra's Additional CSS field.
+4. Preview the frontend, check desktop/mobile behavior, then update the page. Replace the old video grid rather than leaving both sections visible. The new block includes the dark MVR channel banner.
+
+WordPress can strip scripts when the editor account lacks unfiltered_html or the host restricts scripts. If the JavaScript does not survive saving, use Option B. In WordPress versions with separate HTML/CSS/JavaScript panels, put each split file into the matching panel without style/script tags, when those panels are available to your account. A page-builder editor may not execute scripts until frontend preview.
+
+Option B — split files / Astra child theme
+1. Paste mvr-youtube.html into a Custom HTML block or Elementor HTML widget.
+2. Paste mvr-youtube.css into Appearance → Customize → Additional CSS (without <style> tags), or load it through an Astra child theme.
+3. Have the site administrator upload mvr-youtube.js to the active child theme's assets folder and enqueue it in the footer. Example for functions.php follows. Do not replace existing functions.php contents or edit the parent Astra theme.
+
+add_action('wp_enqueue_scripts', function () {
+    // This loads a small, scoped script. It does nothing on pages without the block.
+    $file = get_stylesheet_directory() . '/assets/mvr-youtube.js';
+    if (file_exists($file)) {
+        wp_enqueue_script(
+            'mvr-youtube-marquee',
+            get_stylesheet_directory_uri() . '/assets/mvr-youtube.js',
+            array(),
+            filemtime($file),
+            true
+        );
+    }
+});
+
+4. If loading CSS through the child theme too, upload mvr-youtube.css and enqueue it with wp_enqueue_style instead of also pasting it into Additional CSS. Use each file only once.
+5. Clear the page/cache plugin/CDN cache after updating. Check the published frontend rather than relying only on the editor canvas.
+
+How the seamless loop works
+The track holds two identical groups. Each group includes a 24px trailing gap. The track has no extra gap between groups. CSS moves the track from translateX(0) to translateX(-50%), which is precisely one whole group. The next frame starts with identical cards at identical positions, so the restart is seamless.
+
+@keyframes mvr-youtube-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+}
+
+The animation itself uses only CSS; there are no JavaScript animation timers, Swiper dependencies or jQuery. JavaScript prepares the duplicate group, fills short selections so a group spans the viewport, and provides the pause button. Without JavaScript the original cards remain a horizontally scrollable row.
+
+To build a CSS-only variant, manually duplicate the complete .mvr-marquee-group, put aria-hidden="true" and data-mvr-copy on its duplicate, set tabindex="-1" on duplicate links, add is-ready to the .mvr-marquee element, and remove the script and hidden pause button. Keep enough cards in EACH group to cover the widest container. The supplied JavaScript automates this safely for different feed lengths and sizes, and supplies the persistent pause control needed on touch devices.
+
+Customisation
+• Speed: change --mvr-duration:55s in .mvr-marquee. Larger values move more slowly. Keep linear infinite.
+• Card width: --mvr-card-width:340px; the mobile rule uses min(80vw,320px).
+• Gap: --mvr-gap:24px; mobile uses 16px.
+• Content: edit the original article cards in mvr-youtube.html or the all-in-one block. Update each video's real YouTube URL, thumbnail video ID, title and short description together. Do not hand-add a duplicate group when using the script.
+• The banner button points to https://www.youtube.com/@MaduraiRamakrishnan/videos.
+• Clicking anywhere on a card opens its individual YouTube video in a new tab. No lightbox or autoplaying video player is used.
+
+Content source
+The standalone block contains eleven real video URLs supplied for this MVR project, including the seven most recently provided links. Their titles were checked against YouTube's public metadata. It is a curated selection, not an automatically synchronised list of every upload from the channel. The local Media page combines the existing CMS video records with the supplied video selections, deduplicated by video ID. A channel page URL alone is not a feed API.
+
+Interaction and accessibility
+• Hover anywhere over the carousel to pause immediately.
+• The Pause button freezes motion for touch users; Play resumes after any hover ends.
+• Focusing a card with the keyboard switches to a stationary, horizontally scrollable original row. Duplicate links are excluded from keyboard navigation and screen readers.
+• Reduced-motion preferences disable animation and hide duplicate cards and the unnecessary Pause control. A visitor can still scroll the original row.
+• Keep the component inside a normal full-width or wide content container. It owns overflow clipping; avoid adding another narrow fixed-width wrapper.
+
+Official references
+https://wordpress.org/documentation/article/custom-html/
+https://wpastra.com/docs/how-to-add-custom-css-and-javascript-to-astra-theme/
+https://wpastra.com/docs/how-to-edit-style-css-in-child-theme/
+https://learn.wordpress.org/lesson/enqueuing-css-or-javascript/
+
+These are WordPress installation instructions; the current local project is an HTML/Express website. No WordPress site or active Astra theme was available here to edit or publish.

@@ -1,0 +1,77 @@
+SUPERSEDED: The active assistant now uses Tamil and Azure Speech. Read JARVIS-TAMIL-AZURE-SETUP.txt for current setup and verification.
+
+HISTORICAL: The active assistant now speaks English. See JARVIS-ENGLISH-VOICE-SETUP.txt for current instructions and verification.
+
+MVR JARVIS — Self-introduction and playback repair
+15 October 2026
+
+ACTUAL ROOT CAUSE
+
+The running Codex in-app browser has speechSynthesis, SpeechSynthesisUtterance
+and speech recognition APIs, but exposes only these three device voices:
+  Microsoft David - English (United States), en-US
+  Microsoft Mark - English (United States), en-US
+  Microsoft Zira - English (United States), en-US
+
+There is no Tamil voice. /api/assistant/config reports cloud speech unavailable.
+Microphone permission was already granted. The synthesis queue was not paused,
+pending or speaking. There were no console warnings/errors during activation.
+A temporary observer around the real speechSynthesis.speak method recorded
+0 calls, 0 starts, 0 ends and 0 errors after activation. It was then removed.
+
+The missing-output-engine guard stops before speak(). Speech was not cancelled
+mid-sentence, the greeting was not empty, and recognition did not start too early.
+Changing a language tag cannot make an English device voice a Tamil voice.
+
+REPAIRS
+
+frontend/js/jarvis-tamil-commands.js
+  Replaced the greeting with the requested introduction. MVR and AI are written
+  phonetically as “எம் வி ஆர்” and “ஏ ஐ” for Tamil speech.
+
+frontend/js/jarvis-tamil-session.js
+  Activation now checks permission, prepares Tamil output, speaks, waits for
+  the actual end event, then listens. Successful questions resume listening.
+  Failed playback can retry in the user's click before asynchronous work.
+  Stop/mute/off drop pending playback and navigation. Only a deliberate new
+  voice session resets the introduction marker; navigation does not.
+
+frontend/js/jarvis-tamil-audio.js
+  Waits for voiceschanged and polls for delayed voices for up to five seconds.
+  Selects only Tamil voices, sets ta-IN/rate/pitch/volume, resumes a paused queue,
+  and retains the utterance until real start/end/error events finish it.
+  Permission requests are cancellable/bounded and late streams are released.
+  Empty/non-Tamil output is rejected; silent or failed playback cannot hang.
+  Consented cloud fallback handles an unavailable/failing native Tamil engine.
+  Autoplay retry reuses an already-loaded output blob directly in the click.
+
+frontend/js/jarvis-tamil-ui.js
+  Keeps the existing design and Tamil controls; failed playback offers
+  “குரலை மீண்டும் இயக்கு”. No chat, transcripts or written answers were added.
+
+tests/tamil-voice.test.js
+  Expanded to 17 voice tests covering the new introduction, exact permission /
+  speech / listening order, delayed voices, paused queues, blocked replay,
+  late permission streams, cancellation and all five allowlisted routes.
+
+JARVIS-TAMIL-VOICE-SETUP.txt
+  Updated activation, retry, provider setup, diagnostics and validation notes.
+
+VALIDATION AND REMAINING LIMITATION
+
+npm run build: passed; JavaScript syntax and all 36 HTML pages validated.
+npm test: all 66 passed, including booking/auth/admin/PostgreSQL regressions.
+Browser: all five pages render; voice-only UI and truthful missing-voice status
+verified, along with activation, mute, stop, off and no console errors.
+Voice routing, greeting once, reply/resume and autoplay replay are tested with
+injected speech APIs. These tests are not proof of audible device speech.
+
+Audible Tamil, real microphone transcription and live provider playback remain
+unverified: the local device has no Tamil voice and cloud speech is not configured.
+No API key, OS language pack or paid service was installed/enabled by this fix.
+
+To enable real audio, expose a Tamil voice in this browser, or configure the
+existing server-only OPENAI_API_KEY and JARVIS_CLOUD_SPEECH=true as documented in
+JARVIS-TAMIL-VOICE-SETUP.txt. Restart after environment changes, refresh the page,
+turn voice mode off, then activate a new session. Verify the introduction, actual
+Tamil pronunciation and the listen/reply/resume cycle on the deployment device.
