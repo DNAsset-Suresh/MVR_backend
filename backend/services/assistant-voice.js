@@ -1,19 +1,28 @@
-import {tamilSpeech,voiceErrors,voiceCommand,voicePages} from '../../frontend/js/jarvis-voice-commands.js';
+import {tamilSpeech,voiceErrors,voiceMessages,voiceCommand,voicePages,isVoiceCommandAttempt} from '../../frontend/js/jarvis-voice-commands.js';
 import {approvedMediaFeature,inferredKind,readAvailability} from './assistant-knowledge.js';
 import {date} from '../validators/index.js';
 export {synthesizeTamil} from './azure-speech.js';
-export function commandReply(message){const action=voiceCommand(message);return action?.type==='navigate'?{speech:voicePages[action.page].speech,action,mode:'website'}:null;}
-export const isAvailabilityQuestion=message=>/\b(?:dates?|available|availability|slots?|calendar)\b|தேதி|கிடைக்க|நாட்காட்டி/i.test(message);
+export function commandReply(message){
+ const action=voiceCommand(message);
+ if(action?.type==='navigate')return {speech:voicePages[action.page].speech,action,mode:'website'};
+ if(action||isVoiceCommandAttempt(message))return {speech:action?.type==='help'?voiceMessages.help:voiceMessages.clarify,action:null,mode:'website'};
+ return null;
+}
+export const isAvailabilityQuestion=message=>/\b(?:dates?|available|availability|slots?|calendar|today|tomorrow)\b|தேதி|கிடைக்க|நாட்காட்டி|இன்றைக்கு|நாளை/i.test(message);
 const spokenDate=value=>new Intl.DateTimeFormat('ta-IN',{day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Kolkata'}).format(new Date(value+'T12:00:00+05:30'));
 const excerpt=(text,max=600)=>{const clean=String(text).replace(/\s+/g,' ').trim();if(clean.length<=max)return tamilSpeech(clean);const cut=clean.slice(0,max),end=Math.max(cut.lastIndexOf('. '),cut.lastIndexOf('! '),cut.lastIndexOf('? '));return end>=0?tamilSpeech(cut.slice(0,end+1)):null;};
-export async function voiceWebsiteReply(message,knowledge,{availability=readAvailability}={}){
+export async function voiceWebsiteReply(message,knowledge,{availability=readAvailability,now=()=>new Date()}={}){
  const kind=inferredKind(message),feature=approvedMediaFeature(message);let speech=voiceErrors.unknown;
  if(isAvailabilityQuestion(message)){
-  const candidate=message.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0];
+  const relative=/\btomorrow\b|நாளை/i.test(message)?1:/\btoday\b|இன்று|இன்றைக்கு/i.test(message)?0:null;
+  const day=relative===null?null:new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now().getTime()+relative*86400000));
+  const candidate=message.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0]||day;
   if(candidate&&!date.safeParse(candidate).success)return {speech:'அந்தத் தேதி சரியானது அல்ல. நாட்காட்டிப் பக்கத்தில் தேதியைச் சரிபார்க்கவும்.',action:null,mode:'website'};
   const rows=await availability(candidate||null),available=rows.filter(row=>row.selectable).slice(0,3);
   speech=available.length?'கோரிக்கை அனுப்பக் கிடைக்கும் வெளியிடப்பட்ட நேரங்கள்: '+available.map(row=>spokenDate(row.date)+', '+(row.half==='FIRST_HALF'?'முதல் பாதி':'இரண்டாம் பாதி')).join('. ')+'. அனைத்தும் இந்திய நேரப்படி. இது முன்பதிவு உறுதி அல்ல. தேதி கிடைக்கும் பக்கத்தில் நேரத்தைத் தேர்ந்தெடுத்து கோரிக்கை அனுப்பவும்.':'இந்தக் கோரிக்கைக்குக் கிடைக்கும் நேரங்கள் தற்போது வெளியிடப்படவில்லை. தேதி கிடைக்கும் பக்கத்தைப் பார்க்கவும் அல்லது எம்.வி.ஆர் குழுவைத் தொடர்புகொள்ளவும்.';
- }else if(/\b(?:awards?|achievements?|qualifications?|fees?|prices?|cost)\b|விருது|சாதனை|தகுதி|கட்டணம்/i.test(message)){
+ }else if(/(?:your name|who are you|உன்னுடைய பெயர்|உன் பெயர்|நீ யார்)/i.test(message))speech='நான் MVR-ன் JARVIS உதவியாளர். எம்.வி.ஆர், நிகழ்ச்சிகள், காணொளிகள், முன்பதிவு முறை மற்றும் கிடைக்கும் தேதிகள் பற்றி உதவுகிறேன்.';
+ else if(/(?:speak tamil|talk.*tamil|தமிழில் பேச|தமிழ் தெரியுமா)/i.test(message))speech='ஆம், என்னிடம் தமிழில் பேசலாம். ஆங்கிலமும் கலந்த கேள்விகளைக் கேட்கலாம். குரல் அறிதல் உங்கள் உலாவி அல்லது அமைக்கப்பட்ட குரல் சேவையைப் பொறுத்தது.';
+ else if(/\b(?:awards?|achievements?|qualifications?|fees?|prices?|cost)\b|விருது|சாதனை|தகுதி|கட்டணம்/i.test(message)){
   speech=knowledge.filter(k=>!k.id.startsWith('owner-')&&/award|achievement|qualification|fee|price|விருது|சாதனை|தகுதி|கட்டணம்/i.test(k.title+' '+k.body)).map(k=>excerpt(k.body)).find(Boolean)||'கேட்ட குறிப்பிட்ட விவரத்தை உறுதிப்படுத்த அங்கீகரிக்கப்பட்ட தகவல் என்னிடம் இல்லை. எம்.வி.ஆர் குழுவிடம் சரிபார்க்கவும்.';
  }else if(/\b(?:book|booking|enquiry|enquiries|reserve)\b|முன்பதிவு/i.test(message))speech='முன்பதிவைக் கோர, கிடைக்கும் தேதியையும் நேரத்தையும் தேர்ந்தெடுக்கவும். உள்நுழைந்து நிகழ்ச்சி மற்றும் தொடர்பு விவரங்களைப் படிவத்தில் உள்ளிட்டு, சரிபார்த்து கோரிக்கையை அனுப்பவும். அங்கீகரிக்கப்பட்ட நிர்வாகி மட்டுமே முன்பதிவை உறுதி செய்ய முடியும். நான் முன்பதிவைச் சமர்ப்பிக்கவோ மாற்றவோ முடியாது.';
  else if(feature)speech=feature.body;

@@ -7,6 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "jarvis:check": "node --env-file-if-exists=.env scripts/check-jarvis.js",
     "start": "node --env-file-if-exists=.env backend/server.js",
     "dev": "node --env-file-if-exists=.env --watch backend/server.js",
     "db:migrate": "node --env-file-if-exists=.env backend/migrate.js",
@@ -17,6 +18,7 @@
     "test": "node --env-file-if-exists=.env --test --test-concurrency=1 tests/*.test.js"
   },
   "dependencies": {
+    "@google/genai": "2.30.0",
     "cookie-parser": "^1.4.7",
     "docx": "^9.10.0",
     "express": "^5.1.0",

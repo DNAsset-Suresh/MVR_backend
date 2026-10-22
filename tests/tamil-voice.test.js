@@ -8,25 +8,39 @@ import {voiceWebsiteReply} from '../backend/services/assistant-voice.js';
 import {coreKnowledge} from '../backend/services/assistant-knowledge.js';
 import {modelReply} from '../backend/services/assistant-model.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('contextual navigation validates the server action, speaks first and can be stopped',async()=>{
+ const h=harness({ask:async()=>({speech:'ignored model text',action:{type:'navigate',page:'about'}})});
+ const started=h.session.activate();await tick();h.finish();await started;
+ h.listener.onFinal('அந்த பக்கத்தை திற');await tick();assert.equal(h.speeches.at(-1),voicePages.about.speech);assert.deepEqual(h.routes,[]);h.finish();await tick();assert.deepEqual(h.routes,['/about.html']);h.session.disable();
+ for(const action of [{type:'navigate',page:'admin'},{type:'navigate',page:'about',href:'https://evil.test'},{type:'execute',page:'about'}]){
+  const h=harness({ask:async()=>({speech:'சரி.',action})});const p=h.session.activate();await tick();h.finish();await p;h.listener.onFinal('அந்த பக்கத்தை திற');await tick();h.finish();await tick();assert.deepEqual(h.routes,[]);h.session.disable();
+ }
+});
+test('English replies use an English browser voice only when requested by playback options',async()=>{
+ let utterance;const tamil={name:'Valluvar',lang:'ta-IN'},english={name:'English India',lang:'en-IN'};
+ const environment={SpeechSynthesisUtterance:class{constructor(text){this.text=text;}},speechSynthesis:{getVoices:()=>[tamil,english],speak:u=>{utterance=u;},cancel(){}}};
+ const driver=createVoiceAudio({environment});await driver.prepare();assert.equal(driver.supportsLanguage('en-IN'),true);
+ assert.equal((await driver.speak('Hello')).reason,'invalid');const p=driver.speak('Hello, I can help with MVR.',{language:'en-IN'});assert.equal(utterance.voice,english);assert.equal(utterance.lang,'en-IN');utterance.onstart();utterance.onend();assert.equal((await p).reason,'ended');driver.stop();
+});
 const storage=()=>{const map=new Map();return {getItem:k=>map.get(k)||null,setItem:(k,v)=>map.set(k,v)};};
-function harness({store=voiceSessionStore(storage()),permission=true,prepared=true,ask=async()=>({speech:'வணக்கம். உதவத் தயாராக இருக்கிறேன்.'})}={}){
+function harness({store=voiceSessionStore(storage()),permission=true,prepared=true,visible,resolveNavigation,ask=async()=>({speech:'வணக்கம். உதவத் தயாராக இருக்கிறேன்.'})}={}){
  const speeches=[],states=[],routes=[],permissions=[],order=[];let pending,listener,clears=0;
  const driver={prepare:async()=>{order.push('prepare');return prepared;},permission:async options=>{order.push('permission');permissions.push(options);if(permission instanceof Error)throw permission;return permission;},listen:handlers=>{order.push('listen');listener=handlers;},stopListening(){listener=null;},stopSpeaking(){if(pending){const p=pending;pending=null;p.resolve({reason:'stopped'});}},stop(){this.stopListening();this.stopSpeaking();},speak(text,options={}){order.push('speak');assert.ok(tamilSpeech(text));speeches.push(text);return new Promise(resolve=>{pending={resolve,options};});}};
- const session=createVoiceSession({driver,store,config:Promise.resolve({ai_available:true,cloud_speech_available:false}),ask,navigate:path=>routes.push(path),clear:()=>{clears++;},onChange:s=>states.push(s)});
+ const session=createVoiceSession({driver,store,config:Promise.resolve({ai_available:true,cloud_speech_available:false}),ask,visible,resolveNavigation,navigate:path=>routes.push(path),clear:()=>{clears++;},onChange:s=>states.push(s)});
  return {session,driver,speeches,states,routes,permissions,order,store,get listener(){return listener;},get clears(){return clears;},startSpeech(){pending?.options.onStart?.();},finish(reason='ended'){const p=pending;pending=null;if(reason==='ended')p?.options.onStart?.();p?.resolve({reason});},async start(){const p=session.activate();await tick();return p;}};
 }
-test('Natural Tamil spoken commands map only to the five requested routes',()=>{
- assert.deepEqual(Object.values(voicePages).map(p=>p.href),['/','/about.html','/programmes.html','/media.html','/availability.html']);
- for(const [q,page]of [['JARVIS, open the home page.','home'],['Show me the programmes.','programmes'],['Open the media page.','media'],['Check available dates.','availability'],['Go back to the home page.','home'],['Open the about page','about'],['Could you open the about page','about'],['முகப்புப் பக்கத்தைத் திற','home'],['எம் வி ஆர் பற்றிய பக்கத்தைத் திற','about'],['நிகழ்ச்சிகளை காட்டு','programmes'],['காணொளிகள் பக்கத்தைத் திற','media'],['கிடைக்கும் தேதிகளை காட்டு','availability']])assert.deepEqual(voiceCommand(q),{type:'navigate',page},q);
+test('Natural Tamil spoken commands map to verified routes',()=>{
+ assert.deepEqual(Object.values(voicePages).map(p=>p.href),['/','/about.html','/journey.html','/speaking.html','/programmes.html','/trust.html','/media.html','/availability.html','/booking.html','/contact.html','/login.html','/register.html','/track-enquiry.html','/privacy.html','/terms.html','/forgot-password.html']);
+ for(const [q,page]of [['JARVIS, open the home page.','home'],['Show me the programmes.','programmes'],['Open the media page.','media'],['Check available dates.','availability'],['Go back to the home page.','home'],['Open the about page','about'],['Could you open the about page','about'],['Open the journey page','journey'],['Open the speaking page','speaking'],['Open the trust page','trust'],['Open the booking page','booking'],['Open the contact page','contact'],['Open the register page','register'],['Open the track enquiry page','track-enquiry'],['Open the privacy page','privacy'],['Open the terms page','terms'],['Open the forgot password page','forgot-password'],['முகப்புப் பக்கத்தைத் திற','home'],['எம் வி ஆர் பற்றிய பக்கத்தைத் திற','about'],['நிகழ்ச்சிகளை காட்டு','programmes'],['காணொளிகள் பக்கத்தைத் திற','media'],['கிடைக்கும் தேதிகளை காட்டு','availability'],['முன்பதிவு பக்கத்தைத் திற','booking'],['தொடர்பு விவரங்கள் பக்கத்தைத் திற','contact']])assert.deepEqual(voiceCommand(q),{type:'navigate',page},q);
  assert.deepEqual(voiceCommand('Stop speaking, JARVIS.'),{type:'pause'});assert.deepEqual(voiceCommand('Turn off the microphone.'),{type:'disable'});
- for(const q of ['Tell me about MVR.','Do not open the home page','Open admin','Open https://evil.example','Open media and home','How do I open media?','Open booking','முகப்புப் பக்கத்தைத் திறக்க வேண்டாம்','எம் வி ஆர் பற்றி சொல்லுங்கள்'])assert.equal(voiceCommand(q),null,q);
+ for(const q of ['Tell me about MVR.','Do not open the home page','Open admin','Open https://evil.example','Open media and home','How do I open media?','Open dashboard','முகப்புப் பக்கத்தைத் திறக்க வேண்டாம்','எம் வி ஆர் பற்றி சொல்லுங்கள்'])assert.equal(voiceCommand(q),null,q);
  for(const text of [voiceGreeting,...Object.values(voiceErrors),...Object.values(voicePages).map(p=>p.speech)])assert.ok(tamilSpeech(text));
  for(const text of ['Hello','தமிழ் https://example.test','தமிழ் <script>','हिन्दी','தமிழ் 😀','அ'.repeat(901),'வணக்கம்\nஉலகம்'])assert.equal(tamilSpeech(text),null);
 });
 test('voice session greets once, begins only after permission, resumes after reply and never exposes text in state',async()=>{
- const h=harness();await h.session.restore();assert.equal(h.permissions.length,0);assert.equal(h.listener,undefined);
+ const h=harness();await h.session.restore();assert.equal(h.permissions.length,0);assert.equal(h.listener,null);
  const started=h.session.activate();await tick();assert.equal(h.permissions[0].request,true);assert.equal(h.session.getState().status,'loading');assert.equal(h.speeches[0],voiceGreeting);assert.equal(h.listener,null);
- assert.deepEqual(h.order,['permission','prepare','speak']);assert.equal(voiceGreeting,'வணக்கம்! நான் ஜார்விஸ். எம்.வி.ஆர் அவர்களின் AI உதவியாளர். உங்களுக்கு என்ன உதவி வேண்டும்? எம்.வி.ஆர் அவர்களைப் பற்றித் தெரிந்துகொள்ளவா, நிகழ்ச்சிகளைப் பார்க்கவா, அல்லது நிகழ்ச்சிக்கான தேதியைத் தேர்வு செய்யவா?');
+ assert.deepEqual(h.order,['permission','prepare','speak']);assert.equal(voiceGreeting,'வணக்கம்! நான் MVR-ன் JARVIS உதவியாளர். உங்களுக்கு என்ன உதவி வேண்டும்?');
  h.startSpeech();assert.equal(h.session.getState().status,'speaking');h.finish();await started;assert.equal(h.session.getState().status,'starting');h.listener.onStart();assert.equal(h.session.getState().status,'listening');
  h.listener.onFinal('Tell me about MVR');await tick();assert.equal(h.speeches.length,2);h.startSpeech();h.finish();await tick();assert.equal(h.session.getState().status,'starting');assert.ok(!JSON.stringify(h.states).includes('Tell me about MVR'));
  h.session.pause();const resumed=h.session.activate();await resumed;assert.equal(h.speeches.filter(s=>s===voiceGreeting).length,1);h.session.disable();await tick();assert.equal(h.clears,1);assert.equal(h.session.getState().enabled,false);
@@ -138,9 +152,57 @@ test('failed native Tamil engine uses the consented cloud provider once before a
  await driver.prepare({cloudAvailable:false});const noConsent=driver.speak('வணக்கம்.');utterance.onerror({error:'voice-unavailable'});assert.equal((await noConsent).reason,'error');assert.equal(requests,1);
 });
 
-test('all five spoken page actions wait for confirmation and stop cancels a pending move',async()=>{
- for(const [command,path]of [['Open the home page','/'],['Open the about page','/about.html'],['Show me the programmes','/programmes.html'],['Open the media page','/media.html'],['Check available dates','/availability.html']]){
+test('all six spoken page actions wait for confirmation and stop cancels a pending move',async()=>{
+ for(const [command,path]of [['Open the home page','/'],['Open the about page','/about.html'],['Show me the programmes','/programmes.html'],['Open the media page','/media.html'],['Check available dates','/availability.html'],['Login page-a open pannu','/login.html']]){
   const h=harness(),start=h.session.activate();await tick();h.finish();await start;h.listener.onFinal(command);await tick();assert.deepEqual(h.routes,[]);h.finish();await tick();assert.deepEqual(h.routes,[path]);h.session.disable();
+ }
+});
+
+test('duplicate finals and stale end/error callbacks cannot send twice, cancel speech or navigate twice',async()=>{
+ const h=harness(),started=h.session.activate();await tick();h.finish();await started;
+ const stale=h.listener;stale.onFinal('Open Login');stale.onFinal('Open Login');stale.onEnd();stale.onError('network');await tick();
+ assert.equal(h.speeches.length,2);assert.deepEqual(h.routes,[]);h.finish();await tick();assert.deepEqual(h.routes,['/login.html']);
+ stale.onFinal('Open Media');await tick();assert.deepEqual(h.routes,['/login.html']);h.session.disable();
+});
+
+test('repeated starts are idempotent and an intentional stop cannot be revived by late events',async()=>{
+ const h=harness(),first=h.session.activate();await h.session.activate();await tick();assert.equal(h.permissions.length,1);assert.equal(h.speeches.length,1);
+ h.finish();await first;const listener=h.listener;await h.session.activate();assert.equal(h.permissions.length,1);
+ listener.onFinal('Stop listening');listener.onEnd();listener.onStart();assert.equal(h.session.getState().status,'paused');assert.equal(h.listener,null);
+ await h.session.activate();assert.equal(h.speeches.length,1);h.listener.onFinal('Start listening');await tick();h.finish();await tick();assert.ok(h.listener);h.session.disable();
+});
+
+test('unknown command, empty final and help are handled locally in Tamil without asking a model',async()=>{
+ const h=harness({ask:assert.fail}),first=h.session.activate();await tick();h.finish();await first;
+ for(const command of ['Open a random URL','Run JavaScript','Open admin','',null,'What can you do?']){
+  h.listener.onFinal(command);await tick();assert.ok(tamilSpeech(h.speeches.at(-1)));assert.deepEqual(h.routes,[]);h.finish();await tick();assert.ok(h.listener);
+ }
+ h.session.disable();
+});
+
+test('history and refresh wait for completed speech; failed navigation pauses and gives a Tamil error',async()=>{
+ for(const command of ['Go back','Go forward','Refresh page']){
+  let moves=0;const h=harness({resolveNavigation:()=>({speech:'பக்கத்தைத் திறக்கிறேன்.',execute:()=>{moves++;return false;}})});
+  const first=h.session.activate();await tick();h.finish();await first;h.listener.onFinal(command);await tick();assert.equal(moves,0);
+  h.finish();await tick();assert.equal(moves,1);assert.equal(h.listener,null);h.finish();await tick();assert.equal(h.session.getState().reason,'navigationFailed');assert.equal(h.session.getState().paused,true);h.session.disable();
+ }
+});
+
+test('manual reload stops listening; a voice handoff resumes only once, including a cached-page restore',async()=>{
+ const backing=storage(),h=harness({store:voiceSessionStore(backing)}),first=h.session.activate();await tick();h.finish();await first;
+ const old=h.listener;h.session.unload();old.onFinal('Open Media');await tick();assert.deepEqual(h.routes,[]);
+ const reload=harness({store:voiceSessionStore(backing)});await reload.session.restore();assert.equal(reload.permissions.length,0);
+ await h.session.activate();h.listener.onFinal('Open Login');await tick();h.finish();await tick();assert.equal(h.store.read().resumeAfterNavigation,true);
+ const next=harness({store:voiceSessionStore(backing)});await next.session.restore();assert.equal(next.permissions[0].request,false);assert.ok(next.listener);assert.equal(next.store.read().resumeAfterNavigation,false);
+ // A page restored from BFCache must reread the latest stop state, never its frozen copy.
+ next.session.disable();await h.session.restore();assert.equal(h.session.getState().enabled,false);assert.equal(h.listener,null);
+});
+
+test('voice handoffs never resume on a hidden page or a login redirect outside the allowlist',async()=>{
+ for(const hidden of [true,false]){
+  const store=voiceSessionStore(storage());store.write({enabled:true,paused:false,consent:true,greeted:true,resumeAfterNavigation:true});
+  const h=harness({store,visible:()=>!hidden});await h.session.restore({allowResume:hidden});
+  assert.equal(h.permissions.length,0);assert.equal(h.listener,null);assert.equal(h.session.getState().status,'paused');assert.equal(store.read().resumeAfterNavigation,false);
  }
 });
 

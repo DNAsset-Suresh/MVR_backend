@@ -1,0 +1,160 @@
+MVR JARVIS — Gemini integration and Tamil voice verification
+22 October 2026
+Project: C:\Users\Admin\OneDrive\Desktop\MVR_Website
+
+Implemented in the existing website. The backend is running at http://localhost:3000/ using the local preview server. Gemini conversation support is ready to configure. Live Gemini generation and audible Tamil remain unverified: GEMINI_API_KEY is absent, Azure Speech key/region are empty, and the tested browser has no Tamil synthesis voice.
+
+INITIAL INSPECTION (completed and reported before editing)
+
+The site uses vanilla HTML/CSS and browser ES modules, Node ESM, Express 5 and PostgreSQL. There is no Astra/WordPress runtime in this checkout. Node 24 is installed; package.json supports Node 22+. The existing test runner is node:test.
+
+frontend/js/main.js loads chatbot.js, which uses jarvis-voice-ui.js. The active voice implementation is split into jarvis-voice-session.js (lifecycle), jarvis-voice-audio.js (speech/recognition), jarvis-pcm-capture.js (bounded cloud recording), jarvis-voice-commands.js and jarvis-voice-navigation.js (approved navigation). Existing animations live in frontend/css/jarvis-voice.css. Older voice modules remain for compatibility and are not the active UI.
+
+backend/routes/assistant.js already supplied configuration, voice replies, cloud speech, recognition and conversation clearing. assistant-knowledge.js reads owner-approved facts, published CMS records, selected media and public availability. assistant-memory.js supplies bounded, account-bound RAM context. The previous model service used OpenAI. Azure Speech SDK 1.52.0 was already integrated for ta-IN recognition and Valluvar/Pallavi synthesis.
+
+The inspected integrations include authentication/CSRF, user bookings, admin roles and decisions, SMTP/password reset, WhatsApp notifications, Google Calendar, uploads and CMS. This upgrade changes no database schema, authentication handler, booking mutation, admin permission or integration credential.
+
+All six approved pages returned HTTP 200: /, /about.html, /programmes.html, /media.html, /availability.html and /login.html. Initial browser console inspection showed no errors. Windows speech registrations and the actual browser voice list contained only English voices. Missing speech configuration, rather than a Tamil language-code typo, explains the silence.
+
+Planned fixes implemented: official server-side Gemini SDK; one configurable model; strict speech/intent validation; temporary conversation context; exact new greeting; safe contextual navigation; clear provider-failure fallback; explicit disclosure of Google and memory use. Existing speech permission, interruption, duplicate-result and end-of-playback safeguards were retained.
+
+IMPLEMENTATION
+
+The active voice endpoint now uses official @google/genai 2.30.0. GEMINI_MODEL defaults to gemini-3.5-flash-lite, documented by Google as a stable text-output model supporting structured output. It does not generate audio. Model/API compatibility was verified from current documentation and through the installed SDK with a mocked HTTP transport. Access for your particular Google account cannot be verified without a key.
+
+Pipeline: Tamil recognition -> POST /api/assistant/voice -> approved website records + Gemini -> validated spoken text -> existing Tamil browser TTS or consented Azure synthesis. Browser recognition remains ta-IN; mixed English/Tamil transcription quality depends on the recognizer. A specifically requested English answer can use an installed English browser voice. This does not enable persistent bilingual recognition or switch Tamil cloud recognition to English.
+
+The exact greeting is:
+வணக்கம்! நான் MVR-ன் JARVIS உதவியாளர். உங்களுக்கு என்ன உதவி வேண்டும்?
+
+Gemini receives only bounded question/history text and published records. JSON output permits answer, clarification or an approved navigation intent. A requested destination must also match the human's command; an enum alone is not sufficient. The frontend validates the action again and uses its own fixed route and confirmation. There are no Gemini tools for code, shell commands, SQL, external URLs or booking changes. Fast local commands remain deterministic.
+
+Up to six question-and-answer turns live in server RAM for at most 30 minutes. A separate random HttpOnly voice cookie and authenticated owner isolate this context from legacy chat and other accounts. Mic off deletes context and aborts a pending reply when the server is reachable. An unreachable server retains context only until expiry. No audio or conversation text is written to files, application logs or PostgreSQL. Existing activation consent was versioned so the new disclosure appears before use.
+
+“MVR பற்றி சொல்லு” followed by “அந்த பக்கத்தை திற” resolves the last verified topic. Unknown or ambiguous commands ask for clarification. Availability bypasses Gemini and reads current authorized public database data; today/tomorrow are calculated in Asia/Kolkata. Availability is never a booking confirmation.
+
+Provider requests have bounded timeouts, output length, history and retries (one attempt, no automatic continuation). Invalid credentials, model/configuration errors, quotas, network errors and timeouts return a spoken Tamil website fallback. Raw provider errors and keys are not returned or logged. Source IDs must refer to supplied records. This reduces hallucination risk; it cannot prove every model sentence is factually faithful, so live-answer review remains necessary.
+
+FILES CHANGED
+
+package.json, package-lock.json — official pinned SDK and jarvis:check command.
+.env.example — blank server-only Gemini key and documented model setting.
+backend/services/assistant-gemini.js (new) — SDK request, structured-output validation, grounding, bounded context and safe failure classification.
+backend/routes/assistant.js — Gemini dispatch for active voice, optional consented voice memory, configuration disclosure, contextual routing and clearing. Legacy /chat compatibility remains.
+backend/services/assistant-voice.js — identity/language fallbacks and live IST today/tomorrow availability.
+frontend/js/jarvis-voice-commands.js — exact greeting, requested-page validation, contextual phrases, natural question handling and explicit English requests.
+frontend/js/jarvis-voice-session.js — validated server navigation, language-specific playback and new consent version.
+frontend/js/jarvis-voice-audio.js — English browser synthesis only for explicitly requested English replies; Tamil remains the default engine.
+frontend/js/jarvis-voice-ui.js — Google/memory disclosure and consented context request. No chat or transcript UI added.
+frontend/privacy.html — actual provider, retention and clearing behavior.
+scripts/check-jarvis.js (new) — safe configuration check and explicit optional live connection test.
+tests/assistant.test.js, tests/tamil-voice.test.js — provider compatibility, new greeting, contextual navigation and English voice checks.
+tests/gemini.test.js, tests/gemini-integration.test.js (new) — SDK contract, grounding, failure handling, memory, endpoint and privacy regression coverage.
+This report is new. CSS, page designs, booking/admin code and your actual .env were not changed. Pre-edit copies are in .local/backups/gemini-20261022/. frontend/ is already Git-ignored in this project, so its edited files will not appear in a normal git diff; the backup includes them.
+
+SECURE GEMINI SETUP
+
+1. Create a Gemini API key privately through Google AI Studio: https://aistudio.google.com/apikey
+2. Review your project's quota, billing and data terms first. No billing or paid service was enabled by this work. Current Gemini 3.5 Flash-Lite pricing lists a free tier subject to limits; paid standard rates are USD 0.30 per million input tokens and USD 2.50 per million output tokens. Unpaid-tier content may be used to improve Google products. Rates and eligibility can change: https://ai.google.dev/gemini-api/docs/pricing
+3. Add only these entries to the existing .env, preserving all database and integration settings:
+   GEMINI_API_KEY=<your private key>
+   GEMINI_MODEL=gemini-3.5-flash-lite
+   Replace the placeholder; never put the key in public files or paste it into chat.
+4. Restart the existing backend. Run npm run jarvis:check. This prints configuration booleans and the model name, without exposing secrets or calling a provider.
+5. Once you accept any usage cost, run npm run jarvis:check -- --live. It verifies account access to the configured model and requests one short public Tamil answer. It does not test speaker output or your physical microphone. No live provider test was run here.
+
+TAMIL SPEECH ON THIS WINDOWS DEVICE
+
+Observed voices: Microsoft David, Mark and Zira, all en-US. A fresh browser check returned offline ta-IN recognition = unavailable. A real native ta-IN recognition attempt returned network. The real UI correctly displayed “Install a Tamil voice or configure Azure Speech”. Gemini alone does not fix these two speech engines.
+
+Browser/Windows option: open Narrator settings with Windows + Ctrl + N, choose Add legacy voices (or Add more voices), then Manage voices > Add voices, and install Tamil if offered. Microsoft lists the Tamil voice Valluvar. Restart the browser completely and check whether speechSynthesis.getVoices() exposes a ta-IN voice. Installing Windows language/voice components does not guarantee that the in-app browser exposes them or that Tamil speech recognition becomes available. Test in current Chrome or Edge too, permit the microphone for localhost, and confirm actual Tamil recognition. No package or system setting was changed during this upgrade.
+
+Existing Azure option: configure the already integrated resource privately:
+   AZURE_SPEECH_KEY=<your Speech resource key>
+   AZURE_SPEECH_REGION=<that resource's region>
+   AZURE_SPEECH_VOICE=ta-IN-ValluvarNeural
+The existing alternate is ta-IN-PallaviNeural. Restart the backend and activate voice mode after reading its Azure disclosure. This uses the existing PCM recognition and MP3 playback path and avoids relying on the browser vendor's recognition service. Azure usage follows your resource's billing/quotas; no new Azure resource was created or enabled.
+
+SPEECH OPTIONS COMPARED
+
+Option                         Tamil support / latency / cost / decision
+Browser recognition + TTS       Depends on exposed browser/OS capabilities. Local TTS avoids a synthesis network round trip. No new cloud speech bill; recognition may use the browser vendor. Retained, but this device currently lacks working Tamil engines.
+Browser + Google Cloud TTS     Official ta-IN Standard, WaveNet and Chirp 3 HD voices exist. Adds a synthesis request and separate cloud setup; browser recognition problems remain. Billing must be enabled; Chirp 3 HD lists a one-million-character allowance then USD 30/million characters. Not added or activated without your cost approval.
+Gemini native audio / Live     Current Google documentation lists Tamil for TTS and Live. Live supports streamed dialogue but needs WebSocket/session/interruption infrastructure; TTS is a separate audio-capable model. Audio is metered and model/tier limits vary. No latency benchmark was run. Not added; unnecessary for this focused upgrade while existing Azure speech is available to configure.
+
+The simplest change is Gemini text generation plus the existing browser/Azure speech system. Optional Google speech can be evaluated later after billing approval and a real Tamil quality test.
+
+RUN COMMANDS (from the existing project directory)
+
+npm ci
+npm run jarvis:check
+npm run build
+npm test
+
+For this local preview without outbound notification workers:
+node --env-file-if-exists=.env scripts/preview-server.js
+
+For the normal configured website process: npm start
+For the existing development watcher: npm run dev
+Use only one server on port 3000. Stop its existing process before restarting. PostgreSQL must be running with the existing .env connection. Do not rerun seed/reset commands on your existing database. Automated tests require a separate TEST_DATABASE_URL and use temporary schemas.
+
+TEST RESULTS
+
+Check                                               Result
+Automated suite                                     142 passed; 0 failed in final run
+Build                                               JavaScript syntax and 36 HTML pages passed
+Official SDK serialization + Tamil response          Passed with mocked transport; no real key used
+401/403, 400/404, 429, network, timeout                Passed with mocks and endpoint tests
+Memory bound, account isolation, expiry, clear       Passed, including late-response suppression
+Unsafe URL/code/action and unknown command checks    Passed
+Permission denial, missing voices, duplicate finals  Passed with speech mocks
+Greeting, resume listening, contextual About open    Passed in real browser with simulated speech events and real local backend
+Responsive JARVIS interface                         Inspected at desktop and 390 x 844; no chat/text input
+Six public destinations                             HTTP 200 after restart
+Existing login, booking and admin authorization      Passed in isolated database regression tests
+Browser console during inspected flow               No errors/warnings observed
+Actual Tamil TTS on this device                      Unavailable: no Tamil voice exposed
+Actual native Tamil recognition                     Failed with network; offline ta-IN unavailable
+Live Gemini account response                        Not run: no configured Gemini key
+Live Azure Tamil audio                              Not run: no configured Azure key/region
+Physical microphone accuracy / Tamil pronunciation  Not verified; requires the user and working speech provider
+
+Browser evidence: .local/gemini-real-voice-status.png and .local/gemini-mobile-disclosure.png. Full automated output: .local/gemini-all-tests.txt. Browser speech fixtures were temporary and removed by navigation/reload; no fake provider was left installed in the site.
+
+MANUAL TEST PHRASES AFTER CONFIGURATION
+
+ஜார்விஸ், உன்னுடைய பெயர் என்ன?
+MVR பற்றி சொல்லு.
+அந்த பக்கத்தை திற.
+MVR என்னென்ன நிகழ்ச்சிகள் நடத்துகிறார்?
+நிகழ்ச்சிகளுக்கு எப்படி முன்பதிவு செய்வது?
+என்னால் உன்னிடம் தமிழில் பேச முடியுமா?
+இன்றைக்கு என்ன தேதிகள் கிடைக்கின்றன?
+நிகழ்ச்சிகள் பக்கத்திற்கு போ.
+மீடியா பக்கத்தை காட்டு.
+லாகின் பக்கத்தை திற.
+இந்த பக்கத்தை refresh செய்.
+Please explain MVR in English.
+Stop speaking.
+Turn off the microphone.
+
+Verify the exact introduction once, real audible responses, no recognition during playback, automatic listening only after playback ends, and Mic off stopping audio and clearing context. Test accents and Tanglish with a physical microphone. Back/forward intentionally refuse destinations hidden by the browser's history API; use a named page instead. No history/privacy headers were weakened.
+
+LIMITS AND OPTIONAL WORK
+
+Voice controls cannot listen while the assistant is speaking; use the existing Stop speaking button to interrupt playback. The word JARVIS is an optional command prefix, not an always-on wake-word engine. Hidden tabs, errors, revoked permissions and manual navigation pause listening. Recognition/TTS availability and autoplay rules vary by browser. If no Tamil output engine exists, errors can only be shown as short status feedback.
+
+Completed advanced items: bounded session memory, context follow-ups, safe page control, published-content retrieval, website fallback, interruption controls and private-data filtering. Persistent bilingual mode, user-adjustable voice/rate/volume, authenticated booking-status voice lookup, booking submission and admin voice actions were not added. Existing secure forms and admin interfaces remain the way to perform those operations. Multi-worker deployment needs a shared expiring context store or sticky sessions; current context is intentionally process-local.
+
+PRIMARY REFERENCES (checked 22 October 2026)
+
+Official SDK: https://ai.google.dev/gemini-api/docs/libraries
+Selected model: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
+SDK generateContent: https://googleapis.github.io/js-genai/release_docs/classes/models.Models.html
+Structured output: https://ai.google.dev/gemini-api/docs/structured-output
+Gemini pricing/data tiers: https://ai.google.dev/gemini-api/docs/pricing
+Gemini TTS languages: https://ai.google.dev/gemini-api/docs/speech-generation
+Live languages/limitations: https://ai.google.dev/gemini-api/docs/live-api/capabilities
+Google Cloud Tamil voices: https://docs.cloud.google.com/text-to-speech/docs/list-voices-and-types
+Google Cloud TTS billing: https://cloud.google.com/text-to-speech/pricing
+Windows Tamil voice installation: https://support.microsoft.com/en-au/accessibility/windows/narrator/appendix-a-supported-languages-and-voices

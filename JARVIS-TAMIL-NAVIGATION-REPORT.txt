@@ -1,0 +1,325 @@
+MVR JARVIS — Tamil voice navigation upgrade
+22 October 2026
+Project: C:\Users\Admin\OneDrive\Desktop\MVR_Website
+
+RESULT
+
+Upgraded the existing assistant in place. Tamil, English and common Tanglish
+commands now resolve to six fixed pages plus help, pause/resume, safe history
+and refresh actions. No replacement website, chat interface, dependency,
+database migration or authentication change was introduced.
+
+Automated checks: 128 passed, 0 failed, 0 skipped. Build passed (36 HTML pages
+and JavaScript syntax). Live browser page navigation and UI checks passed with
+the limitations below. Real spoken Tamil input/output is NOT verified: this
+browser exposes only English voices and the running backend reports Azure
+Speech as unconfigured. Deterministic speech tests use explicit test doubles.
+
+INSPECTION
+
+Stack: vanilla HTML/CSS and browser ES modules; Node.js ESM (requires >=22,
+observed v24.19.0), Express 5, PostgreSQL via pg, npm/package-lock.json.
+The installed Microsoft Speech SDK remains at 1.52.0. No package was installed.
+The test framework is Node's built-in node:test runner.
+
+Entry points and workflow:
+- backend/server.js starts the normal application and notification worker.
+- backend/app.js mounts security middleware, APIs and existing static pages.
+- frontend/js/main.js loads the shared shell and page modules.
+- frontend/js/chatbot.js exports the active jarvis-voice-ui.js initializer.
+- jarvis-voice-session.js coordinates activation, permission, speech and input.
+- jarvis-voice-audio.js selects Tamil TTS and manages recognition/playback.
+- Native recognition uses ta-IN. Installed local Tamil recognition is detected;
+  optional recognition-pack installation requires the explicit download button.
+- With the existing configured/disclosed Azure integration, PCM microphone clips
+  use the backend recognition endpoint; Tamil responses use native Tamil TTS
+  when available or backend Azure audio. English TTS is never used for Tamil.
+- /api/assistant/voice returns Tamil website answers and published availability;
+  optional AI remains server-side and requires the existing provider consent.
+
+Inspected source/configuration included:
+package.json, package-lock.json, README.md, .gitignore;
+backend/app.js, backend/server.js, backend/routes/assistant.js,
+backend/services/assistant-voice.js, backend/services/azure-speech.js,
+backend/services/assistant-knowledge.js, backend/services/assistant-model.js;
+backend authentication/booking/database integration and existing test coverage;
+scripts/check.js, scripts/preview-server.js, scripts/browser-qa-server.js;
+frontend/js/main.js, frontend/js/chatbot.js, frontend/js/auth.js,
+frontend/js/jarvis-voice-commands.js, frontend/js/jarvis-voice-session.js,
+frontend/js/jarvis-voice-audio.js, frontend/js/jarvis-voice-ui.js,
+frontend/js/jarvis-pcm-capture.js, frontend/css/jarvis-voice.css;
+legacy jarvis-navigation.js, jarvis-session.js, jarvis-voice.js (not the active UI);
+the six target HTML documents, frontend/privacy.html;
+tests/tamil-voice.test.js, tests/jarvis-voice-navigation.test.js,
+tests/assistant.test.js, tests/platform.test.js and existing regression scripts;
+JARVIS-TAMIL-AZURE-SETUP.txt. Configuration checks disclosed readiness only,
+never secret values. Source inventory excluded dependencies and generated data.
+
+All requested routes existed before editing and returned HTTP 200:
+Home /; About /about.html; Programmes /programmes.html; Media /media.html;
+Availability /availability.html; Login /login.html.
+
+Original findings:
+1. The active fixed map had five pages and omitted Login.
+2. Partial-keyword matching accepted overly loose phrases and missed requested
+   Tamil transliterations, history, refresh, help and resume commands.
+3. Session callbacks lacked a per-listening-cycle one-result latch, so duplicate
+   or late results could conflict with processing/playback.
+4. Repeated activation could cancel and restart in-progress setup or speech.
+5. Manual reload and cached-page restoration did not have an explicit, single-use
+   voice-navigation handoff. Old in-memory state could disagree with tab storage.
+6. Native recognition assumed a well-formed results collection; malformed events
+   could throw. A backend callback's existence was mistaken for recognition
+   availability even when the provider was not configured.
+7. Tamil synthesis already selected Tamil correctly; the observed missing sound
+   is a missing engine/configuration issue. Only Microsoft David, Mark and Zira
+   (en-US) were exposed. No Tamil engine was installed during this upgrade.
+8. The local preview and project database were stopped at inspection. Restarted
+   the existing isolated PostgreSQL instance on 127.0.0.1:55432 and preview.
+
+FILES MODIFIED
+
+frontend/js/jarvis-voice-commands.js
+  Adds Login once, anchored command grammar, bounded input normalization, Tamil
+  aliases and Tanglish suffixes, control/help/history actions and Tamil messages.
+  Rejects URL/query/script syntax before punctuation removal. Unknown command
+  attempts receive a Tamil clarification rather than a generated destination.
+
+frontend/js/jarvis-voice-session.js
+  Consumes a single recognition result per cycle; ignores stale callbacks;
+  makes repeated starts idempotent; waits for speech completion before moving;
+  handles failed moves; persists/consumes one navigation-resume flag; rereads
+  flags on cached-page restoration; pauses manual reloads and hidden pages.
+
+frontend/js/jarvis-voice-audio.js
+  Requires actually available recognition capability/provider; handles malformed
+  native/cloud results, constructor failures and repeated start events; retains
+  ta-IN input and matching Tamil voice selection, async voice loading, playback
+  retry, cancellation and microphone/audio mutual exclusion.
+
+frontend/js/jarvis-voice-ui.js
+  Wires the safe navigator into the existing interface; handles pageshow/BFCache;
+  prevents auto-resume on a login redirect outside the allowlist; gives an explicit
+  missing-Tamil-voice setup status. No transcript or answer text was added.
+
+backend/services/assistant-voice.js
+  Shares the updated command map; returns local Tamil help/clarification for
+  control or unsupported command attempts before optional model processing.
+
+frontend/privacy.html
+  Updates only the JARVIS disclosure for Login, history checks, manual reload
+  behavior and the navigation-resume flag.
+
+tests/tamil-voice.test.js
+  Updates the six-page contract and adds duplicate/stale event, repeated-start,
+  local clarification, history failure, reload, cached-page and hidden/redirect
+  resumption tests.
+
+tests/assistant.test.js
+  Verifies the six-page public configuration, Login command, malformed/external
+  commands, Tamil help and no model dispatch for those command responses.
+
+FILES CREATED
+
+frontend/js/jarvis-voice-navigation.js
+  Small, injectable browser adapter: canonical same-origin URL validation against
+  exactly six routes; safe refresh; adjacent history entry validation; checks
+  destination again after speech; uses navigation.traverseTo only when verifiable.
+
+tests/tamil-navigation.test.js
+  Command matrix, URL/allowlist, history race/error, malformed recognition and
+  capability/permission/error tests. Uses the existing runner; no dependency.
+
+JARVIS-TAMIL-NAVIGATION-REPORT.txt
+  This implementation, setup, test and limitation report.
+
+Local evidence/backup artifacts (not website assets):
+.local/backups/tamil-navigation-20261022/ contains copies of modified source
+  before edits, privacy.html, and content-hashes.json.
+.local/tamil-navigation-tests.txt contains the final full-suite output.
+.local/tamil-navigation-setup.png shows the real missing-Tamil-engine status.
+.local/tamil-navigation-mobile.png shows the existing panel at 390 x 844.
+
+Git currently ignores frontend/, so its changes are protected by the explicit
+backup rather than appearing in ordinary git diff. Backend/tests remain visible
+in Git. No commit was made. All 46 pre-existing HTML/CSS hashes were compared:
+only privacy.html changed. The six target pages and every CSS file are unchanged.
+
+HOW TO START AND CONFIGURE
+
+In PowerShell:
+  Set-Location 'C:\Users\Admin\OneDrive\Desktop\MVR_Website'
+  npm start
+
+npm start is the existing verified package script for backend/server.js.
+npm run dev is the existing watch-mode command. This QA session ran the existing
+preview instead, which does not run migrations, seed data or outbound workers:
+  node --env-file-if-exists=.env scripts/preview-server.js
+
+The preview is running at http://localhost:3000/. Do not start another server
+on port 3000 simultaneously. Existing .env/database settings were not changed.
+No production database was used by the automated tests; their setup checks that
+TEST_DATABASE_URL differs from DATABASE_URL and uses temporary test schemas.
+
+Microphone:
+1. Open the local site in a supported browser. Production must use HTTPS.
+2. Open JARVIS and click Start voice mode. Allow microphone access for this site.
+3. If previously denied, change this site's microphone permission in the browser
+   site controls and reload; check Windows microphone privacy access if needed.
+4. Wait for the introduction to finish. Speak only when the indicator is Listening.
+5. Stop speaking pauses the cycle; Resume restarts it. Mic off disables voice mode.
+   Click Resume after a stop, tab hiding, a manual reload or a recoverable error.
+
+Tamil browser voice:
+Open Windows Settings > Time & language > Speech > Manage voices/Add voices
+(labels may vary), or Tamil's Language options. Install Tamil text-to-speech only
+if offered. Microsoft lists Valluvar for Tamil. Restart the browser, then check
+speechSynthesis.getVoices() for ta-IN or another ta locale. A general language
+pack or an English speech-recognition pack is not evidence of Tamil TTS support.
+An OS/Narrator voice may not be exposed to a particular browser. No software or
+voice pack was installed by this upgrade.
+
+Existing Azure alternative (previously approved integration):
+Privately configure the existing .env with a valid Azure Speech resource key and
+its matching region:
+  AZURE_SPEECH_KEY=<your resource key>
+  AZURE_SPEECH_REGION=<your resource region>
+  AZURE_SPEECH_VOICE=ta-IN-ValluvarNeural
+The existing allowed alternative is ta-IN-PallaviNeural. Never put the key in
+frontend code or chat. Restart the backend and reload the page after saving.
+The provider notice must show Azure before activation. Resource usage follows
+your existing Azure plan. No new provider or account was introduced here.
+The public config should report cloud_speech_available and
+cloud_recognition_available as true. OpenAI is optional for answer generation;
+it is not required for command navigation or website-based Tamil answers.
+See JARVIS-TAMIL-AZURE-SETUP.txt for the existing SDK/configuration details.
+
+COMMANDS
+
+Destination/action | Examples
+Home / | முகப்பு பக்கத்தை திற; முகப்பு பக்கத்திற்கு போ; Go home; Home page open pannu
+About /about.html | அபௌட் பக்கத்தை திற; Open About page; Hey JARVIS, open About
+Programmes /programmes.html | நிகழ்ச்சிகள் பக்கத்தை திற; Go to Programmes; Programmes page-ku po
+Media /media.html | மீடியா பக்கத்தை காட்டு; Show me Media; JARVIS, please open the Media page
+Availability /availability.html | அவெயிலபிலிட்டி பக்கத்தை திற; Open Availability; Check available dates
+Login /login.html | லாகின் பக்கத்தை திற; Open Login; Login page-a open pannu
+Back | முந்தைய பக்கத்திற்கு போ; Go back
+Forward | அடுத்த பக்கத்திற்கு போ; Go forward
+Refresh | இந்த பக்கத்தை ரிப்ரெஷ் செய்; Refresh page
+Pause | ஜார்விஸ் நிறுத்து; Stop listening; Stop speaking
+Resume command | ஜார்விஸ் மீண்டும் கேள்; Start listening
+Help | நீ என்ன செய்ய முடியும்?; What can you do?
+Disable | Turn off the microphone
+
+Recognition must already be listening to hear a command. The Resume command is
+understood during an active recognition cycle; it cannot reactivate a physically
+stopped microphone. Use the button in that situation. While JARVIS is speaking,
+recognition is intentionally stopped to prevent feedback; interrupt with the
+Stop speaking button. Hey JARVIS is an optional prefix, not an always-on wake word.
+Matching recognized text is tested; actual Tamil/Tanglish acoustic accuracy is
+provider/device dependent and has not been established in this session.
+
+TEST RESULTS — EXPECTED / ACTUAL / STATUS
+
+Test | Expected | Actual | Status
+npm test | All existing and new tests pass | 128 passed; 0 failed/skipped | PASS
+npm run build | JS syntax and HTML checks | 36 pages validated | PASS
+git diff --check | No whitespace errors in tracked edits | Exit 0 | PASS
+Open About / About page | about action, /about.html | Both match | PASS, automated
+Go to Programmes | programmes action | /programmes.html | PASS, automated
+Show me Media | media action | /media.html | PASS, automated
+JARVIS, please open Media page | media action | /media.html | PASS, automated
+Open Availability | availability action | /availability.html | PASS, automated
+Open Login | login action | /login.html; one map entry | PASS, automated
+Go home | home action | / | PASS, automated
+Go back / forward | Verified adjacent entry or refusal | Positive, absent, hidden, unsafe, changed and rejected entries tested | PASS, mocked history
+Refresh page | Reload only current allowed page | Reloads /; invalid current URL refused | PASS, unit and browser
+Stop listening | Pause without restart | Paused; late events ignored | PASS, unit and simulated browser input
+Start listening | Tamil acknowledgement then listen | Resume action recognized | PASS, unit
+What can you do | Tamil capabilities, no model call | Local Tamil reply | PASS, unit/API
+Tamil commands | Required page/control mappings | All supplied examples match | PASS, text fixtures
+Tanglish commands | Required page mappings | page-ku po / open pannu / page-a match | PASS, text fixtures
+Unknown/empty/partial speech | Clarification/error, no navigation | Local clarification; interim ignored; malformed final rejected | PASS, unit
+Duplicate final events | One answer or move | One answer and one Login move | PASS, unit/browser simulation
+External URL, JS, random URL | No action | Rejected/clarified | PASS, unit/API
+Queries, unknown routes, encoded paths | No allowlist bypass | Refused | PASS, unit
+Unsupported API / missing mic / denied permission | Useful error; no restart loop | Explicit error reasons; paused | PASS, mocked
+No speech / service failure / abort | Error once; stop until user action | Simulated failures handled | PASS, mocked
+Missing Tamil TTS | No English fallback | Real setup status; mic never begins | PASS, actual browser
+Delayed voices / autoplay / retry | Wait; replay only on gesture | Deterministic event/retry tests pass | PASS, mocked
+Manual reload / cached return | No unintended listening | Explicit handoff consumed once | PASS, unit; real refresh stays off
+Hidden page / login redirect | No automatic mic on unapproved page | Both guarded | PASS, unit
+Six page HTTP routes | Existing routes return 200 | All six 200 before edits | PASS, real HTTP
+Six page browser rendering | Pages load, JARVIS present, no chat | All six render correctly | PASS, actual browser
+Actual normal Back | Do not traverse hidden destination | Browser returned null history URLs; refused | PASS, safety fallback; normal traversal unavailable
+Actual history API | Traverse known safe entries | Back/forward succeeded for synthetic same-document entries | PASS, real history API with simulated speech
+Greeting/answer/stop/resume UI | Correct states; Tamil only; one greeting | Simulated TTS/ASR + real backend: speaking/listening/paused, one greeting | PASS, explicitly simulated audio
+Mixed Login command UI | Move only after confirmation end | Stayed on old page until end; Login loaded once | PASS, real page move, simulated speech
+Desktop/mobile panel | Existing panel visible/in bounds | Desktop and 390x844 inspected; no mobile horizontal overflow | PASS, visual
+Existing HTML/CSS | Preserve design/content | 46 hashes checked; only intentional privacy copy changed | PASS
+Auth/booking/admin/database | Existing permissions and workflows work | Real isolated PostgreSQL regression suite passed | PASS, API/integration
+Real Tamil voice command recognition | Acoustic input recognizes Tamil | No end-to-end live test without working Tamil output | MANUAL REQUIRED
+Audible Tamil introduction/answers | Understandable Tamil audio | Only en-US voices; Azure unconfigured | NOT VERIFIED
+Live Azure STT/TTS | Valid resource returns real speech | SDK/endpoints mocked; credentials unavailable | NOT RUN LIVE
+Fresh permission prompt | User grants/denies actual prompt | Existing mic permission already granted; denial mocked | MANUAL REQUIRED
+All authenticated browser form journeys | Full UI workflows | Covered by API regressions, not all forms re-entered in browser | NOT RUN IN FULL
+
+Browser testing details: normal pages used their real modules and backend.
+A disposable QA tab used explicit recognition, utterance and synthesis test
+doubles to exercise the existing UI; these produced no actual sound. A duplicate
+synthetic result produced one Tamil backend response, and no transcript/answer
+appeared in the UI. Its 25-second no-speech timeout also paused correctly when
+testing stopped. A partial initial test double could not satisfy the native
+utterance voice type; the complete double fixed the test harness. All temporary
+browser modifications were discarded, the QA tab closed, and viewport reset.
+No browser override or mock was added to website source.
+
+SECURITY AND REGRESSION CHECKLIST
+
+[PASS] Only six fixed canonical same-origin destinations; Login occurs once.
+[PASS] No speech-derived URL, query, JavaScript, shell or OS execution.
+[PASS] History inspected and rechecked; no blind history.go/back fallback.
+[PASS] Speech completion precedes navigation; stop cancels a pending move.
+[PASS] Unknown command attempts cannot request model-driven navigation.
+[PASS] Existing user/admin cookies, CSRF, roles and booking authorization retained.
+[PASS] Login page keeps existing authentication and redirect behavior.
+[PASS] No frontend credentials, audio storage or transcript logging added.
+[PASS] No schema, dependency, booking/admin implementation or CSS changes.
+[PASS] Existing UI, microphone animations, controls and responsive sizing retained.
+[PASS] No provider/install/download action added without explicit activation.
+[PASS] Regression tests use test schemas; preview does not send notifications.
+[LIMIT] Browser/OS/provider microphone and speech capabilities still apply.
+
+REMAINING LIMITATIONS AND MANUAL ACCEPTANCE
+
+1. Install/expose a Tamil TTS voice or configure the existing Azure service, then
+   manually verify the introduction, a spoken MVR question, a Tamil page command,
+   a Tanglish command, end-of-speech listening resumption and post-navigation
+   behavior on the actual intended browser/device. Repeat on mobile hardware.
+2. Test fresh permission grant/denial and disconnected microphone hardware.
+3. Native recognition stays ta-IN. There is no silent English-locale fallback;
+   an English pack does not provide Tamil recognition. Dialect/accent coverage
+   and code-switching accuracy depend on the recognition provider.
+4. The current site's Referrer-Policy: no-referrer causes cross-document history
+   entries to expose null URLs in the tested browser. JARVIS deliberately refuses
+   those Back/Forward commands. Say a page name instead. Security/privacy headers
+   were preserved. Known, visible allowlisted history entries use traverseTo.
+5. Browsers may require another Resume/Retry click after navigation or block
+   autoplay/background capture. There is no promise of continuous background use.
+6. A voice request for Login may trigger the site's normal authenticated redirect;
+   the assistant never bypasses that flow and does not auto-listen on the resulting
+   account/booking page outside its navigation allowlist.
+
+REFERENCE DOCUMENTATION
+
+History URL visibility and Referrer-Policy:
+https://developer.mozilla.org/en-US/docs/Web/API/NavigationHistoryEntry/url
+History traversal:
+https://developer.mozilla.org/en-US/docs/Web/API/Navigation/traverseTo
+Windows Tamil voice availability and adding voices:
+https://support.microsoft.com/en-au/accessibility/windows/narrator/appendix-a-supported-languages-and-voices
+Existing Azure language/voice support:
+https://learn.microsoft.com/azure/cognitive-services/speech-service/language-support?tabs=tts
+
+These references explain platform behavior; they do not substitute for the
+reported device observations or prove live Tamil speech on this machine.

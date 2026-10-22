@@ -8,13 +8,14 @@ import {assistantRoutes,approvedRoute} from '../../frontend/js/assistant-routes.
 import {eventTypes} from '../../frontend/js/booking-options.js';
 import {searchKnowledge,readAvailability,inferredKind,approvedMediaFeature} from '../services/assistant-knowledge.js';
 import {aiConfigured,modelReply,containsPrivateData} from '../services/assistant-model.js';
+import {geminiConfigured,geminiReply,geminiFailure} from '../services/assistant-gemini.js';
 import {AssistantMemory,conversationTTL} from '../services/assistant-memory.js';
 import {commandReply,voiceWebsiteReply,isAvailabilityQuestion} from '../services/assistant-voice.js';
 import {azureSpeechConfigured,synthesizeTamil,recognizeTamil,validatePcmWav,speechLimits} from '../services/azure-speech.js';
-import {tamilSpeech,voicePages} from '../../frontend/js/jarvis-voice-commands.js';
+import {tamilSpeech,englishSpeech,wantsEnglish,requestedVoicePage,voiceErrors,voicePages} from '../../frontend/js/jarvis-voice-commands.js';
 
 const chatInput=z.object({message:z.string().trim().min(1).max(1000),language:z.enum(['en-IN','ta-IN']),ai_consent:z.boolean()}).strict();
-const voiceInput=z.object({message:z.string().trim().min(1).max(1000),ai_consent:z.boolean()}).strict();
+const voiceInput=z.object({message:z.string().trim().min(1).max(1000),ai_consent:z.boolean(),memory_consent:z.boolean().default(false)}).strict();
 const speechInput=z.object({text:z.string().max(900).refine(tamilSpeech),cloud_consent:z.literal(true)}).strict();
 const draftInput=z.object({event_type:z.enum(eventTypes),date,half:z.enum(['FIRST_HALF','SECOND_HALF','FULL_DAY']),city:z.string().trim().min(1).max(100),venue:z.string().trim().min(1).max(300),participants:z.coerce.number().int().min(1).max(1000000),audience_type:z.string().trim().min(1).max(200),language:z.enum(['Tamil','English','Tamil and English','Other']),description:z.string().trim().max(1500).default(''),reviewed:z.literal(true)}).strict();
 const links=(...keys)=>keys.map(approvedRoute);
@@ -50,12 +51,12 @@ export async function websiteReply(message,language,knowledge){
  }
  return {answer:answer.slice(0,2500),mode:'website',links:resultLinks,sources};
 }
-export function createAssistantRouter({memory=new AssistantMemory(),reply=modelReply,speech=synthesizeTamil,recognize=recognizeTamil,minuteLimit=20}={}){
- const router=Router(),cookie='mvr_jarvis';
+export function createAssistantRouter({memory=new AssistantMemory(),voiceMemory=new AssistantMemory(),reply=modelReply,voiceReply=geminiReply,speech=synthesizeTamil,recognize=recognizeTamil,minuteLimit=20}={}){
+ const router=Router(),cookie='mvr_jarvis',voiceCookie='mvr_jarvis_voice';
  let speechJobs=0;
  const speechCapacity=(req,res,next)=>{if(speechJobs>=4)return res.status(429).json({success:false,message:'Speech service is busy.'});speechJobs++;let released=false;const release=()=>{if(!released){released=true;speechJobs--;}};res.once('finish',release);res.once('close',release);next();};
- const cleanup=setInterval(()=>memory.prune(),60000);cleanup.unref();
- router.get('/config',(req,res)=>res.json({success:true,data:{ai_available:aiConfigured(),cloud_speech_available:azureSpeechConfigured(),cloud_recognition_available:azureSpeechConfigured(),speech_provider:azureSpeechConfigured()?'azure':null,voice_language:'ta-IN',voice_history:false,history_minutes:30,routes:assistantRoutes,voice_routes:voicePages,event_types:eventTypes}}));
+ const cleanup=setInterval(()=>{memory.prune();voiceMemory.prune();},60000);cleanup.unref();
+ router.get('/config',(req,res)=>res.json({success:true,data:{ai_available:geminiConfigured(),ai_provider:geminiConfigured()?'gemini':null,cloud_speech_available:azureSpeechConfigured(),cloud_recognition_available:azureSpeechConfigured(),speech_provider:azureSpeechConfigured()?'azure':null,voice_language:'ta-IN',voice_history:true,voice_history_turns:6,history_minutes:30,routes:assistantRoutes,voice_routes:voicePages,event_types:eventTypes}}));
  // Validate the live session, never a browser-supplied role or user id. Either login
  // cookie may be present; the matching CSRF token selects the authenticated actor.
  router.use(async(req,res,next)=>{
@@ -68,7 +69,7 @@ export function createAssistantRouter({memory=new AssistantMemory(),reply=modelR
  const accountLimit=rateLimit({windowMs:3600000,limit:60,keyGenerator:req=>req.assistantActor?'user:'+req.assistantActor.id:'ip:'+ipKeyGenerator(req.ip),standardHeaders:'draft-8',legacyHeaders:false,message:{success:false,message:'JARVIS has reached the hourly limit. The normal website remains available.'}});
  router.get('/knowledge/search',ipLimit,async(req,res)=>res.json({success:true,data:await searchKnowledge(z.string().trim().min(1).max(300).parse(req.query.q))}));
  router.get('/availability',ipLimit,async(req,res)=>res.json({success:true,data:await readAvailability(req.query.date?date.parse(req.query.date):null)}));
- router.delete('/conversation',(req,res)=>{memory.clear(req.cookies[cookie],req.assistantActor?.id||'public');res.clearCookie(cookie,cookieOptions);res.json({success:true,data:{message:'Conversation cleared.'}});});
+ router.delete('/conversation',(req,res)=>{const owner=req.assistantActor?.id||'public';memory.clear(req.cookies[cookie],owner);voiceMemory.clear(req.cookies[voiceCookie],owner);res.clearCookie(cookie,cookieOptions);res.clearCookie(voiceCookie,cookieOptions);res.json({success:true,data:{message:'Conversation cleared.'}});});
  router.post('/speech',ipLimit,accountLimit,speechCapacity,async(req,res)=>{
   const input=speechInput.parse(req.body);
   if(!azureSpeechConfigured())return res.status(503).json({success:false,message:'Tamil speech is not configured.'});
@@ -96,24 +97,31 @@ export function createAssistantRouter({memory=new AssistantMemory(),reply=modelR
   const voiceOnly=req.path==='/voice',input=voiceOnly?{...voiceInput.parse(req.body),language:'ta-IN'}:chatInput.parse(req.body),owner=req.assistantActor?.id||'public';
   if(voiceOnly){
    if(containsPrivateData(input.message))return res.json({success:true,data:{speech:'தனிப்பட்ட விவரங்களைப் பேசிப் பகிர வேண்டாம். அவற்றைப் பாதுகாப்பான முன்பதிவுப் படிவத்தில் உள்ளிடவும். இந்தத் தகவல் செயற்கை நுண்ணறிவுச் சேவைக்கு அனுப்பப்படவில்லை.',action:null,mode:'website'}});
+   const prior=input.memory_consent?voiceMemory.get(req.cookies[voiceCookie],owner):null;
+   const page=requestedVoicePage(input.message,prior?.topic);
+   if(page)return res.json({success:true,data:{speech:voicePages[page].speech,action:{type:'navigate',page},mode:'website'}});
    const command=commandReply(input.message);if(command)return res.json({success:true,data:command});
   }
   if(containsPrivateData(input.message))return res.json({success:true,data:{answer:input.language==='ta-IN'?'தனிப்பட்ட தகவல்களை உரையாடலில் பகிர வேண்டாம். தொடர்பு விவரங்களுக்கு பாதுகாப்பான முன்பதிவு படிவத்தையும், நிலவரத்திற்கு My enquiries பக்கத்தையும் பயன்படுத்தவும்.':'Please keep personal details out of chat. Use the secure booking form for contact information, or My enquiries for private booking status. This message was not sent to AI or added to history.',mode:'website',links:links('booking','my_bookings'),sources:[]}});
-  // Voice turns are stateless: no microphone recordings or transcript history.
-  let conversation=voiceOnly?{history:[],busy:false}:memory.get(req.cookies[cookie],owner);
-  if(!conversation){const created=memory.create(owner);conversation=created.session;res.cookie(cookie,created.raw,{...cookieOptions,maxAge:conversationTTL});}
+  // Optional bounded RAM context. Audio is never retained; legacy chat is isolated.
+  const contextMemory=voiceOnly?voiceMemory:memory,contextCookie=voiceOnly?voiceCookie:cookie,persist=!voiceOnly||input.memory_consent;
+  if(voiceOnly&&!persist&&req.cookies[voiceCookie]){voiceMemory.clear(req.cookies[voiceCookie],owner);res.clearCookie(voiceCookie,cookieOptions);}
+  let conversation=persist?contextMemory.get(req.cookies[contextCookie],owner):{history:[],busy:false};
+  if(!conversation){const created=contextMemory.create(owner);conversation=created.session;res.cookie(contextCookie,created.raw,{...cookieOptions,maxAge:conversationTTL});}
   if(conversation.busy)fail(409,'Please wait for the current reply.');conversation.busy=true;
   const controller=new AbortController();conversation.controller=controller;
   const timeout=setTimeout(()=>controller.abort(),20000);const disconnected=()=>{if(!res.writableEnded)controller.abort();};res.on('close',disconnected);
   try{
-   const knowledge=await searchKnowledge(input.message.slice(0,300));
+   const contextual=voiceOnly&&conversation.topic&&/\b(?:it|that|more|these|those)\b|மேலும்|அதை|அவர்|அந்த|இதை|இன்னும்/i.test(input.message);
+   const knowledge=await searchKnowledge((input.message+(contextual?' '+conversation.topic:'')).slice(0,300));
    let result;
    if(voiceOnly&&isAvailabilityQuestion(input.message))result=await voiceWebsiteReply(input.message,knowledge);
-   else if(aiConfigured()&&input.ai_consent){
-    try{result=await reply({message:input.message,language:input.language,knowledge,history:conversation.history,signal:controller.signal,voiceOnly});if(voiceOnly){const speech=tamilSpeech(result.answer);if(!speech)throw new Error('NON_TAMIL_REPLY');result={speech,action:null,mode:'ai'};}}
-    catch{if(!voiceOnly&&controller.signal.aborted&&!memory.sessions.has(conversation.key))fail(409,'Conversation cleared.');result=voiceOnly?await voiceWebsiteReply(input.message,knowledge):await websiteReply(input.message,input.language,knowledge);if(!voiceOnly)result.notice=input.language==='ta-IN'?'AI சேவை கிடைக்கவில்லை. இணையதளத் தகவல்களைப் பயன்படுத்துகிறேன்.':'AI is temporarily unavailable. Using website information.';}
+   else if((voiceOnly?geminiConfigured():aiConfigured())&&input.ai_consent){
+    try{result=await (voiceOnly?voiceReply:reply)({message:input.message,language:input.language,knowledge,history:conversation.history,lastPage:conversation.topic||null,signal:controller.signal,voiceOnly});if(voiceOnly){const speech=(wantsEnglish(input.message)&&result.language==='en-IN'?englishSpeech:tamilSpeech)(result.speech);if(!speech)throw new Error('Invalid speech response.');result={...result,speech};}}
+    catch(error){if(controller.signal.aborted&&persist&&!contextMemory.sessions.has(conversation.key))fail(409,'Conversation cleared.');result=voiceOnly?await voiceWebsiteReply(input.message,knowledge):await websiteReply(input.message,input.language,knowledge);if(voiceOnly){result.fallback_reason=geminiFailure(error);const notice='செயற்கை நுண்ணறிவுச் சேவை இப்போது கிடைக்கவில்லை. இணையதளத் தகவல்களைப் பயன்படுத்துகிறேன். ';result.speech=tamilSpeech(notice+result.speech)||notice+voiceErrors.unknown;}else result.notice=input.language==='ta-IN'?'AI சேவை கிடைக்கவில்லை. இணையதளத் தகவல்களைப் பயன்படுத்துகிறேன்.':'AI is temporarily unavailable. Using website information.';}
    }else result=voiceOnly?await voiceWebsiteReply(input.message,knowledge):await websiteReply(input.message,input.language,knowledge);
-   if(!voiceOnly&&!memory.append(conversation,input.message,result.answer))fail(409,'Conversation expired or was cleared. Please send again.');
+   if(persist&&!contextMemory.append(conversation,input.message,voiceOnly?result.speech:result.answer))fail(409,'Conversation expired or was cleared. Please send again.');
+   if(voiceOnly){const kind=inferredKind(input.message);conversation.topic=result.topic??(isAvailabilityQuestion(input.message)?'availability':({biography:'about',programmes:'programmes',media:'media',trust:'trust','speaking-topics':'speaking',speaking:'speaking',journey:'journey',contact:'contact'})[kind]||null);delete result.topic;}
    res.json({success:true,data:result});
   }finally{clearTimeout(timeout);res.off('close',disconnected);conversation.busy=false;delete conversation.controller;}
  });
